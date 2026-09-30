@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Export the Job Scout workflow from local n8n to workflows/job-scout.json, safe for a public repo.
+
+Reads N8N_API_KEY and TELEGRAM_CHAT_ID from the git-ignored .env. Replaces the chat ID
+with YOUR_TELEGRAM_CHAT_ID, drops instance and ownership fields, and refuses to write
+the file if any .env secret, the public host, the owner's project name or an email
+address still appears in it. Never prints those values.
+
+  tools/export_workflow.py [workflow_id]
+"""
+import json
+import re
+import sys
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import n8n_mcp  # noqa: E402
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "workflows/job-scout.json"
+API = "http://localhost:5678/api/v1"
+NAME = "Job Scout"
+CHAT_PLACEHOLDER = "YOUR_TELEGRAM_CHAT_ID"
+KEEP = ["name", "nodes", "connections", "nodeGroups", "settings", "pinData"]
+SECRET_KEYS = ["TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN", "CLOUDFLARE_TUNNEL_TOKEN", "ANTHROPIC_API_KEY",
+               "TYPESAFE_API_KEY", "X_BEARER_TOKEN", "N8N_API_KEY", "N8N_MCP_TOKEN", "JOBSCOUT_HOST"]
+
+
+def get(path, query=None):
+    env = n8n_mcp.load_env()
+    url = API + path + ("?" + urllib.parse.urlencode(query, quote_via=urllib.parse.quote) if query else "")
+    req = urllib.request.Request(url, headers={"X-N8N-API-KEY": env["N8N_API_KEY"]})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.load(resp)
+
+
+def main():
+    env = n8n_mcp.load_env()
+    chat_id = env.get("TELEGRAM_CHAT_ID", "")
+    if len(sys.argv) > 1:
+        wf_id = sys.argv[1]
+    else:
+        found = [w for w in get("/workflows", {"name": NAME})["data"] if w["name"] == NAME]
+        if len(found) != 1:
+            sys.exit(f'Expected one workflow named "{NAME}", found {len(found)}; pass its ID.')
+        wf_id = found[0]["id"]
+
+    wf = get(f"/workflows/{wf_id}")
+    owners = [s.get("project", {}).get("name", "") for s in wf.get("shared", [])]
+    clean = {k: wf[k] for k in KEEP if k in wf}
+    clean["pinData"] = {}
+    text = json.dumps(clean, indent=2, ensure_ascii=False) + "\n"
+    if chat_id:
+        text = text.replace(chat_id, CHAT_PLACEHOLDER)
+
+    # Everything that must never reach the public repo.
+    forbidden = [env.get(k) for k in SECRET_KEYS]
+    host = urllib.parse.urlparse(env.get("N8N_WEBHOOK_URL", "")).hostname or env.get("JOBSCOUT_HOST", "")
+    if host:
+        forbidden += [host, ".".join(host.split(".")[-2:])]  # the host and its domain
+    forbidden = [v for v in forbidden + owners if v]
+    leaks = [i for i, v in enumerate(forbidden) if v in text]
+    leaks += re.findall(r"[\w.+-]+@[\w-]+\.[a-z]{2,}", text)  # any email address
+    if leaks:
+        sys.exit(f"Refusing to write: {len(leaks)} private value(s) still in the export "
+                 "(not printed). Check the workflow for personal data.")
+
+    OUT.write_text(text)
+    print(f"Wrote {OUT.relative_to(ROOT)} ({len(clean['nodes'])} nodes)")
+
+
+if __name__ == "__main__":
+    main()

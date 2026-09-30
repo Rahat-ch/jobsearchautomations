@@ -1,0 +1,902 @@
+{
+  "name": "Job Scout",
+  "nodes": [
+    {
+      "id": "37bd0c71-9d1d-482a-bab2-3e3aa57850f5",
+      "name": "Daily scan",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        },
+        "misfirePolicy": "coalesce_owner"
+      }
+    },
+    {
+      "id": "7816c927-207e-451f-8bb5-5d3e42ece23c",
+      "name": "Job Scout config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        220,
+        400
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-ashby-boards",
+              "name": "ashbyBoards",
+              "value": "={{ [\"n8n\", \"posthog\", \"ramp\"] }}",
+              "type": "array"
+            },
+            {
+              "id": "cfg-telegram-chat-id",
+              "name": "telegramChatId",
+              "value": "YOUR_TELEGRAM_CHAT_ID",
+              "type": "string"
+            },
+            {
+              "id": "cfg-daily-cap",
+              "name": "dailyCap",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "cfg-table-prefix",
+              "name": "tablePrefix",
+              "value": "jobscout_",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c5017551-8064-481d-9efa-4b624d401c57",
+      "name": "Create leads table if missing",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        400
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "={{ $json.tablePrefix }}leads",
+        "columns": {
+          "column": [
+            {
+              "name": "lead_key",
+              "type": "string"
+            },
+            {
+              "name": "ats",
+              "type": "string"
+            },
+            {
+              "name": "board",
+              "type": "string"
+            },
+            {
+              "name": "job_id",
+              "type": "string"
+            },
+            {
+              "name": "company",
+              "type": "string"
+            },
+            {
+              "name": "title",
+              "type": "string"
+            },
+            {
+              "name": "location_text",
+              "type": "string"
+            },
+            {
+              "name": "workplace_type",
+              "type": "string"
+            },
+            {
+              "name": "secondary_locations",
+              "type": "string"
+            },
+            {
+              "name": "pay_text",
+              "type": "string"
+            },
+            {
+              "name": "posting_url",
+              "type": "string"
+            },
+            {
+              "name": "apply_url",
+              "type": "string"
+            },
+            {
+              "name": "published_at",
+              "type": "date"
+            },
+            {
+              "name": "first_seen_at",
+              "type": "date"
+            },
+            {
+              "name": "last_seen_at",
+              "type": "date"
+            },
+            {
+              "name": "status",
+              "type": "string"
+            },
+            {
+              "name": "sent_at",
+              "type": "date"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      }
+    },
+    {
+      "id": "5c184a36-6e66-45ca-b112-46d5ff345021",
+      "name": "Board list",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        660,
+        400
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "board-list",
+              "name": "boards",
+              "value": "={{ $('Job Scout config').first().json.ashbyBoards }}",
+              "type": "array"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "52df2009-4d59-4e98-8820-2c75688283d3",
+      "name": "Split boards",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        880,
+        400
+      ],
+      "parameters": {
+        "fieldToSplitOut": "boards",
+        "include": "noOtherFields",
+        "options": {
+          "destinationFieldName": "board"
+        }
+      }
+    },
+    {
+      "id": "54091179-074e-4ed1-84da-49145ca9da64",
+      "name": "Fetch Ashby board",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1100,
+        400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.ashbyhq.com/posting-api/job-board/{{ encodeURIComponent(String($json.board).trim()) }}?includeCompensation=true",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "13fd8c4d-7163-4b13-a87a-a25d90ebdce6",
+      "name": "Normalize postings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// One lead per posting. The board name comes from the item that fetched it.\nconst now = new Date().toISOString();\nconst leads = [];\n\n$input.all().forEach((item, i) => {\n  const jobs = item.json.jobs;\n  if (!Array.isArray(jobs)) return; // this board's fetch failed; the other boards still run\n  const board = $('Split boards').itemMatching(i).json.board;\n\n  for (const job of jobs) {\n    if (job.isListed === false) continue;\n    leads.push({\n      json: {\n        lead_key: 'ashby:' + board + ':' + job.id,\n        ats: 'ashby',\n        board: board,\n        job_id: job.id,\n        company: board,\n        title: job.title,\n        location_text: job.location || '',\n        workplace_type: job.workplaceType || '',\n        secondary_locations: (job.secondaryLocations || [])\n          .map((l) => l.location)\n          .filter(Boolean)\n          .join('; '),\n        pay_text: (job.compensation && job.compensation.compensationTierSummary) || '',\n        posting_url: job.jobUrl,\n        apply_url: job.applyUrl,\n        published_at: job.publishedAt || null,\n        last_seen_at: now,\n      },\n    });\n  }\n});\n\nreturn leads;\n"
+      }
+    },
+    {
+      "id": "3bfc5373-16fe-4bd3-85cb-6da54faf29fc",
+      "name": "Save lead",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1540,
+        400
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lead_key",
+              "condition": "eq",
+              "keyValue": "={{ $json.lead_key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f05b7fb8-5c91-40ed-9085-9790f168924e",
+      "name": "Mark first sighting",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        400
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "status",
+              "condition": "isEmpty"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "new",
+            "first_seen_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "first_seen_at",
+              "displayName": "first_seen_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "636f1642-8141-4f7d-adbb-c4e08208e488",
+      "name": "Get leads to send",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1980,
+        400
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "status",
+              "condition": "eq",
+              "keyValue": "new"
+            },
+            {
+              "keyName": "sent_at",
+              "condition": "isEmpty"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": "={{ $('Job Scout config').first().json.dailyCap }}",
+        "orderBy": true,
+        "orderByColumn": "published_at",
+        "orderByDirection": "DESC"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "a92e3af9-bb33-41f9-ae15-63a66ec461d5",
+      "name": "Build lead messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// One Telegram message per lead. Parse mode is HTML, so escape posting text.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\nreturn $input.all().map(({ json: lead }) => {\n  const where = [lead.location_text, lead.workplace_type].filter(Boolean).join(' · ');\n  const lines = [\n    '<b>' + esc(lead.title) + '</b>',\n    esc(lead.company),\n    'Location: ' + esc(where || 'Location unclear'),\n    'Pay: ' + esc(lead.pay_text || 'Pay not listed'),\n  ];\n  if (lead.published_at) lines.push('Posted: ' + String(lead.published_at).slice(0, 10));\n\n  return {\n    json: {\n      row_id: lead.id,\n      lead_key: lead.lead_key,\n      text: lines.join('\\n'),\n      silent: true,\n      button_text: 'Open posting',\n      button_url: lead.posting_url,\n    },\n  };\n});\n"
+      }
+    },
+    {
+      "id": "2c67b0d8-5535-4536-8edc-3b862c41bdfd",
+      "name": "Build header",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2420,
+        400
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "header-count",
+              "name": "lead_count",
+              "value": "={{ $('Build lead messages').all().length }}",
+              "type": "number"
+            },
+            {
+              "id": "header-text",
+              "name": "text",
+              "value": "=Job Scout: {{ $('Build lead messages').all().length }} new {{ $('Build lead messages').all().length === 1 ? 'lead' : 'leads' }} today",
+              "type": "string"
+            },
+            {
+              "id": "header-silent",
+              "name": "silent",
+              "value": false,
+              "type": "boolean"
+            }
+          ]
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "3fdeb8d6-613d-4bc0-b4ef-bcfa7c71290c",
+      "name": "Send header",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2640,
+        400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Job Scout config').first().json.telegramChatId }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "none",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_notification": "={{ $json.silent }}"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "dNZCpYwwJdLFeymL",
+          "name": "Job Scout bot"
+        }
+      },
+      "webhookId": "67f2a098-a63b-4d91-af73-b00ccfc09965"
+    },
+    {
+      "id": "51cc211b-1646-42ac-9801-915681d4b7d9",
+      "name": "Lead messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The header node outputs Telegram's reply, so pick the lead messages back up.\nreturn $('Build lead messages').all().map((item) => ({ json: item.json }));\n"
+      }
+    },
+    {
+      "id": "4180ad9e-c641-4e99-9648-6f84a8570179",
+      "name": "Send lead message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3300,
+        500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Job Scout config').first().json.telegramChatId }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "={{ $json.button_text }}",
+                    "additionalFields": {
+                      "url": "={{ $json.button_url }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_notification": "={{ $json.silent }}"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "dNZCpYwwJdLFeymL",
+          "name": "Job Scout bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "webhookId": "b5bd1c9c-5d85-4f84-a46c-6820c4d505c7"
+    },
+    {
+      "id": "b97b5e09-714b-4153-882c-ad7235a23a9c",
+      "name": "Mark sent",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3520,
+        500
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Loop over leads').item.json.row_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sent_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sent_at",
+              "displayName": "sent_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ed5abf13-283d-47df-bea6-4d811b8ab2bf",
+      "name": "Wait 1 second",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3740,
+        500
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 1,
+        "unit": "seconds"
+      },
+      "webhookId": "78cdabaa-da71-41ed-bc3d-255ada786f9f"
+    },
+    {
+      "id": "879a79a1-b010-47d7-a997-f42c41880ddb",
+      "name": "Loop over leads",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        3080,
+        400
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "0f0d9b38-d11c-4767-b5e5-1cf40cdad152",
+      "name": "Sticky Note 8c29e4eb",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        20
+      ],
+      "parameters": {
+        "content": "## Job Scout: daily scan\n\nEvery morning this path scans the Ashby boards listed in **Job Scout config**, saves one lead per posting in the `leads` Data Table, and sends the newest unsent leads to Telegram.\n\n**Setup**\n1. Create a bot with @BotFather and pick its credential on **Send header** and **Send lead message**.\n2. Fill in **Job Scout config** (see the note below it).\n3. Publish the workflow.\n\nThe `leads` table is created on the first run if it doesn't exist. Job Scout never applies for jobs or contacts anyone.",
+        "color": 4,
+        "width": 460,
+        "height": 320
+      }
+    },
+    {
+      "id": "8ccd1650-86b4-4d96-8331-7016e70ba153",
+      "name": "Sticky Note 7145acf8",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        580
+      ],
+      "parameters": {
+        "content": "## Job Scout config\n\nEdit these fields in the **Job Scout config** node:\n\n- **ashbyBoards**: Ashby board names to scan, as a list. The board name is the part after `jobs.ashbyhq.com/` in a company's job board link. Default: `n8n`, `posthog`, `ramp`.\n- **telegramChatId**: the chat the daily ping goes to. Tap Start in your bot, open `https://api.telegram.org/bot<token>/getUpdates` once, and copy `message.chat.id`.\n- **dailyCap**: the most leads one daily ping sends. Leads over the cap stay New and go out on a later day. Default 10.\n- **tablePrefix**: put in front of every Data Table name, so `jobscout_` gives `jobscout_leads`. n8n looks tables up by a \"name contains\" match, so no other table name may contain the full name (for example, don't use an empty prefix if `jobscout_leads` exists). The tests use `jobscout_test_`.\n\n**Run time** is set on the **Daily scan** trigger, not here, because a trigger's settings can't read other nodes. Default 8:00 in the instance timezone. If n8n is down at that time, the most recent missed scan runs when it comes back.",
+        "color": 6,
+        "width": 700,
+        "height": 440
+      }
+    },
+    {
+      "id": "9f930857-7eaa-4eee-bab6-39cd045e320d",
+      "name": "Sticky Note 3d1fc0d5",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        580
+      ],
+      "parameters": {
+        "content": "## Save leads\n\nA lead is keyed by `ashby:<board>:<job id>`.\n\n- **Save lead** upserts on that key, so a second scan updates the posting fields and `last_seen_at` instead of adding a row.\n- **Mark first sighting** gives rows with no status yet `status = new` and `first_seen_at = now`. Rows that already have a status keep their first-seen date.",
+        "color": 7,
+        "width": 420,
+        "height": 260
+      }
+    },
+    {
+      "id": "f25660e2-4c47-4069-b2df-cad6bcdd9c4f",
+      "name": "Sticky Note c14e9032",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2160,
+        640
+      ],
+      "parameters": {
+        "content": "## Daily ping\n\n- **Get leads to send** picks leads with status `new` and no `sent_at`, newest posting first, up to `dailyCap`. If there are none, nothing is sent.\n- **Send header** sends \"Job Scout: N new leads today\" with sound.\n- Each lead goes out as its own silent message with an **Open posting** button, one per second.\n- **Mark sent** sets `sent_at` right after each message, so no lead is sent twice.\n\nBoth Telegram nodes use HTML parse mode and have the n8n attribution line turned off.",
+        "color": 5,
+        "width": 560,
+        "height": 300
+      }
+    }
+  ],
+  "connections": {
+    "Daily scan": {
+      "main": [
+        [
+          {
+            "node": "Job Scout config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Scout config": {
+      "main": [
+        [
+          {
+            "node": "Create leads table if missing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create leads table if missing": {
+      "main": [
+        [
+          {
+            "node": "Board list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Board list": {
+      "main": [
+        [
+          {
+            "node": "Split boards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split boards": {
+      "main": [
+        [
+          {
+            "node": "Fetch Ashby board",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Ashby board": {
+      "main": [
+        [
+          {
+            "node": "Normalize postings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize postings": {
+      "main": [
+        [
+          {
+            "node": "Save lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save lead": {
+      "main": [
+        [
+          {
+            "node": "Mark first sighting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark first sighting": {
+      "main": [
+        [
+          {
+            "node": "Get leads to send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get leads to send": {
+      "main": [
+        [
+          {
+            "node": "Build lead messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build lead messages": {
+      "main": [
+        [
+          {
+            "node": "Build header",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build header": {
+      "main": [
+        [
+          {
+            "node": "Send header",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send header": {
+      "main": [
+        [
+          {
+            "node": "Lead messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead messages": {
+      "main": [
+        [
+          {
+            "node": "Loop over leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send lead message": {
+      "main": [
+        [
+          {
+            "node": "Mark sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark sent": {
+      "main": [
+        [
+          {
+            "node": "Wait 1 second",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 1 second": {
+      "main": [
+        [
+          {
+            "node": "Loop over leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop over leads": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send lead message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodeGroups": [
+    {
+      "id": "235d8bbf-f0d0-4a6e-baac-d8e3c5cb48b8",
+      "name": "Fetch boards",
+      "nodeIds": [
+        "c5017551-8064-481d-9efa-4b624d401c57",
+        "5c184a36-6e66-45ca-b112-46d5ff345021",
+        "52df2009-4d59-4e98-8820-2c75688283d3",
+        "54091179-074e-4ed1-84da-49145ca9da64",
+        "13fd8c4d-7163-4b13-a87a-a25d90ebdce6"
+      ],
+      "description": "Makes sure the leads table exists, fetches each Ashby board in the config, and turns each posting into a lead."
+    },
+    {
+      "id": "a7dde285-19cd-4bd6-8538-b3e3baf96afb",
+      "name": "Save leads",
+      "nodeIds": [
+        "3bfc5373-16fe-4bd3-85cb-6da54faf29fc",
+        "f05b7fb8-5c91-40ed-9085-9790f168924e"
+      ],
+      "description": "Upserts each lead on its key, then marks leads seen for the first time as New."
+    },
+    {
+      "id": "1b09ec46-ed85-4f22-8cfc-dcf9508338b2",
+      "name": "Build the ping",
+      "nodeIds": [
+        "636f1642-8141-4f7d-adbb-c4e08208e488",
+        "a92e3af9-bb33-41f9-ae15-63a66ec461d5",
+        "2c67b0d8-5535-4536-8edc-3b862c41bdfd",
+        "3fdeb8d6-613d-4bc0-b4ef-bcfa7c71290c",
+        "51cc211b-1646-42ac-9801-915681d4b7d9"
+      ],
+      "description": "Picks unsent New leads up to the daily cap, newest first, and sends the header message."
+    },
+    {
+      "id": "3d3dc24b-7fc4-410f-8c64-ef698ac5bcab",
+      "name": "Send each lead",
+      "nodeIds": [
+        "879a79a1-b010-47d7-a997-f42c41880ddb",
+        "4180ad9e-c641-4e99-9648-6f84a8570179",
+        "b97b5e09-714b-4153-882c-ad7235a23a9c",
+        "ed5abf13-283d-47df-bea6-4d811b8ab2bf"
+      ],
+      "description": "Sends one silent message per lead with an Open posting button and records sent_at, one per second."
+    }
+  ],
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "pinData": {}
+}

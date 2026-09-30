@@ -1,0 +1,461 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "33e46e4f-85b9-49ca-a010-16586c118c50",
+      "title": "Senior Developer Advocate, US",
+      "department": "Marketing",
+      "team": "Marketing",
+      "employmentType": "FullTime",
+      "location": "United States",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "secondaryLocations": [],
+      "publishedAt": "2026-09-29T07:17:34.286+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "United States",
+          "addressLocality": ""
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/n8n/33e46e4f-85b9-49ca-a010-16586c118c50",
+      "applyUrl": "https://jobs.ashbyhq.com/n8n/33e46e4f-85b9-49ca-a010-16586c118c50/application",
+      "descriptionHtml": "<p style=\"min-height:1.5em\"><strong>The AI orchestration of your wildest imagination.</strong></p><p style=\"min-height:1.5em\">n8n is the open workflow orchestra [trimmed]",
+      "descriptionPlain": "The AI orchestration of your wildest imagination.\n\nn8n is the open workflow orchestration platform built for the new era of AI. We give technical teams the free [trimmed]",
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      }
+    },
+    {
+      "id": "569612ef-9772-4351-9ea7-56c359225301",
+      "title": "Field Marketing Lead, US",
+      "department": "Marketing",
+      "team": "Demand Generation",
+      "employmentType": "FullTime",
+      "location": "Boston",
+      "shouldDisplayCompensationOnJobPostings": true,
+      "secondaryLocations": [
+        {
+          "location": "Florida",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "Florida",
+              "addressCountry": "United States"
+            }
+          }
+        },
+        {
+          "location": "New York",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "New York",
+              "addressCountry": "United States",
+              "addressLocality": "New York"
+            }
+          }
+        },
+        {
+          "location": "Massachusetts",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "Massachusetts",
+              "addressCountry": "United States"
+            }
+          }
+        }
+      ],
+      "publishedAt": "2026-09-28T09:19:30.218+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "Massachusetts",
+          "addressCountry": "United States",
+          "addressLocality": "Boston"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/n8n/569612ef-9772-4351-9ea7-56c359225301",
+      "applyUrl": "https://jobs.ashbyhq.com/n8n/569612ef-9772-4351-9ea7-56c359225301/application",
+      "descriptionHtml": "<p style=\"min-height:1.5em\"><strong>The AI orchestration of your wildest imagination.</strong></p><p style=\"min-height:1.5em\">n8n is the open workflow orchestra [trimmed]",
+      "descriptionPlain": "The AI orchestration of your wildest imagination.\n\nn8n is the open workflow orchestration platform built for the new era of AI. We give technical teams the free [trimmed]",
+      "compensation": {
+        "compensationTierSummary": "$205.9K – $251.7K • Offers Equity • Multiple Ranges",
+        "scrapeableCompensationSalarySummary": "$205.9K - $251.7K",
+        "compensationTiers": [
+          {
+            "id": "1bfdeb37-0024-41a7-9188-8941b4651e67",
+            "tierSummary": "$228.8K – $251.7K • Offers Equity",
+            "title": "United States (New York Tri-state/Massachusetts)",
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "e5a206e8-ddc6-41e7-9fea-5f7ec4c25317",
+                "summary": "$228.8K – $251.7K",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 228800,
+                "maxValue": 251700
+              },
+              {
+                "id": "552a23b9-276f-43b1-a78f-8c7fa723da75",
+                "summary": "Offers Equity",
+                "compensationType": "EquityCashValue",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": null,
+                "maxValue": null
+              }
+            ]
+          },
+          {
+            "id": "0e4bd24e-1dcf-4505-8cc5-61f212695f9a",
+            "tierSummary": "$205.9K – $226.5K • Offers Equity",
+            "title": "United States (Florida/Texas)",
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "b201a935-252f-4b3a-b123-d019a8eb1cd3",
+                "summary": "Offers Equity",
+                "compensationType": "EquityCashValue",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": null,
+                "maxValue": null
+              },
+              {
+                "id": "67f4803a-e44e-4cb4-96f1-9873103146ac",
+                "summary": "$205.9K – $226.5K",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 205900,
+                "maxValue": 226500
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "minValue": 205900,
+            "maxValue": 251700,
+            "currencyCode": "USD",
+            "interval": "1 YEAR",
+            "compensationType": "Salary"
+          },
+          {
+            "compensationType": "EquityCashValue",
+            "minValue": null,
+            "maxValue": null,
+            "interval": "1 YEAR"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bf5c14d9-3371-416b-9832-2d3c38de3796",
+      "title": "Enterprise Sales Development Representative US (Hybrid)",
+      "department": "Sales",
+      "team": "Sales Development",
+      "employmentType": "FullTime",
+      "location": "Boston",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "secondaryLocations": [],
+      "publishedAt": "2026-09-23T15:30:45.047+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Hybrid",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "Massachusetts",
+          "addressCountry": "United States",
+          "addressLocality": "Boston"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/n8n/bf5c14d9-3371-416b-9832-2d3c38de3796",
+      "applyUrl": "https://jobs.ashbyhq.com/n8n/bf5c14d9-3371-416b-9832-2d3c38de3796/application",
+      "descriptionHtml": "<p style=\"min-height:1.5em\"><strong>The AI orchestration of your wildest imagination.</strong></p><p style=\"min-height:1.5em\">n8n is the open workflow orchestra [trimmed]",
+      "descriptionPlain": "The AI orchestration of your wildest imagination.\n\nn8n is the open workflow orchestration platform built for the new era of AI. We give technical teams the free [trimmed]",
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      }
+    },
+    {
+      "id": "98dc8c86-b135-4803-8044-1d6f6a631aa8",
+      "title": "Forward Deployed Engineer - US East Coast",
+      "department": "Sales",
+      "team": "Customer Success",
+      "employmentType": "FullTime",
+      "location": "Boston",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "secondaryLocations": [
+        {
+          "location": "California",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "California",
+              "addressCountry": "United States"
+            }
+          }
+        },
+        {
+          "location": "Pennsylvania",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "Pennsylvania",
+              "addressCountry": "United States"
+            }
+          }
+        },
+        {
+          "location": "New York",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "New York",
+              "addressCountry": "United States",
+              "addressLocality": "New York"
+            }
+          }
+        }
+      ],
+      "publishedAt": "2026-09-15T15:21:50.158+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "Massachusetts",
+          "addressCountry": "United States",
+          "addressLocality": "Boston"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/n8n/98dc8c86-b135-4803-8044-1d6f6a631aa8",
+      "applyUrl": "https://jobs.ashbyhq.com/n8n/98dc8c86-b135-4803-8044-1d6f6a631aa8/application",
+      "descriptionHtml": "<p style=\"min-height:1.5em\"><strong>The AI orchestration of your wildest imagination.</strong></p><p style=\"min-height:1.5em\">n8n is the open workflow orchestra [trimmed]",
+      "descriptionPlain": "The AI orchestration of your wildest imagination.\n\nn8n is the open workflow orchestration platform built for the new era of AI. We give technical teams the free [trimmed]",
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      }
+    },
+    {
+      "id": "e3fadce2-e917-409b-b3c1-3b0f92f7cd81",
+      "title": "Senior Partner Manager SI, West Coast",
+      "department": "Sales",
+      "team": "Partnerships",
+      "employmentType": "FullTime",
+      "location": "San Francisco",
+      "shouldDisplayCompensationOnJobPostings": true,
+      "secondaryLocations": [
+        {
+          "location": "Austin, Texas",
+          "address": {
+            "postalAddress": {
+              "postalCode": "78701",
+              "addressRegion": "Texas",
+              "streetAddress": "Austin, Texas",
+              "addressCountry": "United States",
+              "addressLocality": "Austin"
+            }
+          }
+        },
+        {
+          "location": "Los Angeles",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "California",
+              "addressCountry": "United States",
+              "addressLocality": "Los Angeles"
+            }
+          }
+        },
+        {
+          "location": "Texas",
+          "address": {
+            "postalAddress": {
+              "addressCountry": "United States"
+            }
+          }
+        }
+      ],
+      "publishedAt": "2026-09-14T19:06:54.819+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "California",
+          "addressCountry": "United States",
+          "addressLocality": "San Francisco"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/n8n/e3fadce2-e917-409b-b3c1-3b0f92f7cd81",
+      "applyUrl": "https://jobs.ashbyhq.com/n8n/e3fadce2-e917-409b-b3c1-3b0f92f7cd81/application",
+      "descriptionHtml": "<p style=\"min-height:1.5em\"><strong>The AI orchestration of your wildest imagination.</strong></p><p style=\"min-height:1.5em\">n8n is the open workflow orchestra [trimmed]",
+      "descriptionPlain": "The AI orchestration of your wildest imagination.\n\nn8n is the open workflow orchestration platform built for the new era of AI. We give technical teams the free [trimmed]",
+      "compensation": {
+        "compensationTierSummary": "$157,500 – $211,750 • Offers Equity • $67,500 – $90,750 Commission • Multiple Ranges",
+        "scrapeableCompensationSalarySummary": "$157,500 - $211,750",
+        "compensationTiers": [
+          {
+            "id": "760caa46-8477-4d84-a97a-7ca1398a60f1",
+            "tierSummary": "Base Salary $192,500 – $211,750 • Offers Equity • $82,500 – $90,750 Commission",
+            "title": "United States (California)",
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "90063d83-efcd-4b53-8d40-0b188a9e0b39",
+                "summary": "$82,500 – $90,750 Commission",
+                "compensationType": "Commission",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 82500,
+                "maxValue": 90750
+              },
+              {
+                "id": "94b69c94-7bf8-4546-a06a-71310c4c97c3",
+                "summary": "Offers Equity",
+                "compensationType": "EquityCashValue",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": null,
+                "maxValue": null
+              },
+              {
+                "id": "1e751af9-b9fa-4468-ba72-dc4743ca9786",
+                "summary": "Base Salary $192,500 – $211,750",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 192500,
+                "maxValue": 211750
+              }
+            ]
+          },
+          {
+            "id": "58beb206-6acb-4cc7-b589-5e22fa6c316e",
+            "tierSummary": "Base Salary $157,500 – $173,250 • Offers Equity • $67,500 – $74,250 Commission",
+            "title": "United States (Texas)",
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "ba1680cf-8a6a-4537-b9fa-9563fbd1f2a5",
+                "summary": "Offers Equity",
+                "compensationType": "EquityCashValue",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": null,
+                "maxValue": null
+              },
+              {
+                "id": "5f2d7c7b-349f-44d1-aa25-1254b0b32811",
+                "summary": "$67,500 – $74,250 Commission",
+                "compensationType": "Commission",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 67500,
+                "maxValue": 74250
+              },
+              {
+                "id": "703b6db6-6766-448f-9649-29a943665303",
+                "summary": "Base Salary $157,500 – $173,250",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 157500,
+                "maxValue": 173250
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "minValue": 67500,
+            "maxValue": 90750,
+            "currencyCode": "USD",
+            "interval": "1 YEAR",
+            "compensationType": "Commission"
+          },
+          {
+            "compensationType": "EquityCashValue",
+            "minValue": null,
+            "maxValue": null,
+            "interval": "1 YEAR"
+          },
+          {
+            "minValue": 157500,
+            "maxValue": 211750,
+            "currencyCode": "USD",
+            "interval": "1 YEAR",
+            "compensationType": "Salary"
+          }
+        ]
+      }
+    },
+    {
+      "id": "79df05ec-9629-42d2-a612-06eeaaf2450f",
+      "title": "Senior FP&A Manager - Marketing",
+      "department": "Finance & Legal",
+      "team": "Finance & Legal",
+      "employmentType": "FullTime",
+      "location": "Germany",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "secondaryLocations": [
+        {
+          "location": "Portugal",
+          "address": {
+            "postalAddress": {
+              "addressCountry": "Portugal"
+            }
+          }
+        },
+        {
+          "location": "Poland",
+          "address": {
+            "postalAddress": {
+              "addressCountry": "Poland"
+            }
+          }
+        },
+        {
+          "location": "Ireland",
+          "address": {
+            "postalAddress": {
+              "addressCountry": "Ireland"
+            }
+          }
+        }
+      ],
+      "publishedAt": "2026-09-03T16:14:01.228+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "Germany"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/n8n/79df05ec-9629-42d2-a612-06eeaaf2450f",
+      "applyUrl": "https://jobs.ashbyhq.com/n8n/79df05ec-9629-42d2-a612-06eeaaf2450f/application",
+      "descriptionHtml": "<p style=\"min-height:1.5em\"><strong>The AI orchestration of your wildest imagination.</strong></p><p style=\"min-height:1.5em\">n8n is the open workflow orchestra [trimmed]",
+      "descriptionPlain": "The AI orchestration of your wildest imagination.\n\nn8n is the open workflow orchestration platform built for the new era of AI. We give technical teams the free [trimmed]",
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      }
+    }
+  ]
+}
