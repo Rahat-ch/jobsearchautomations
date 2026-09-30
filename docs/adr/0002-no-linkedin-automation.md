@@ -1,0 +1,3 @@
+# No LinkedIn automation; people come from Claude web search
+
+Suggested contacts come from Claude's web search tool (the n8n Anthropic node's Web Search option), which finds public profile pages without logging in to LinkedIn. Each lead also gets a "Search LinkedIn" link that opens LinkedIn's own people search for the job seeker to browse by hand. We rejected a browser agent on the job seeker's logged-in LinkedIn account, and third-party LinkedIn scrapers. LinkedIn's User Agreement (section 8.2) bans bots, scrapers and browser add-ons, and the account is the job seeker's main job-search tool. LinkedIn's self-serve API offers only sign-in and posting, not people search. Research: `docs/research/job-scout-outreach.md`.

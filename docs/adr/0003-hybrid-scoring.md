@@ -1,0 +1,3 @@
+# Hybrid scoring: Jev judges, code weighs, Claude writes
+
+TypeSafe's Jev answers the judgment questions for every lead: role family, stack, seniority, domain, messy location text, and whether a hiring post is a real opening. Code applies the hard rules (location, pay floor, freshness) and combines the sub-scores with the weights in the config. Claude runs only for leads that make the daily cap and for Find people, because those are the steps that need written text. This is why the template needs three keys (Telegram, Anthropic, TypeSafe). We chose it over Claude-only scoring because Jev returns typed, repeatable judgments at a small fraction of the cost per lead, and keeping the total in code makes the fit score explainable. Research: `docs/research/job-scout-jev.md`.

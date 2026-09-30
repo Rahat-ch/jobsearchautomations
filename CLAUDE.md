@@ -26,3 +26,17 @@ The first project here is **Job Scout**, an n8n rebuild of Rahat's Hermes job-sc
 - **Cite research to primary sources:** official docs, source code, first-party APIs.
 - **Tailored resumes** live in `~/Desktop/resumes/<company>/` as HTML, rendered to PDF with headless Chrome (`--print-to-pdf --no-pdf-header-footer`). The general base is `~/Desktop/resumes/general/Rahat Chowdhury Resume 2026.html`.
 - Use they/them for Rahat in docs.
+
+## Agent skills
+
+### Issue tracker
+
+Specs and tickets are GitHub issues on this repo, managed with `gh`. The repo is public. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

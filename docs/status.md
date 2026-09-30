@@ -19,7 +19,8 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 - **Proof of concept first, demo as soon as possible.** Keep it simple.
 - **No frontend.** Telegram is the whole interface. The Hermes board is deferred.
 - **Job Scout replaces only Mina's daily search**, across Ashby, Greenhouse, Lever and X. Resume review and outreach stay in Rahat's Claude sessions.
-- **No Hermes integration.** Rahat runs Job Scout next to Mina for a couple of days, compares results by hand, and iterates. Job Scout borrows Hermes' design (pass codes, weights, X query buckets, scoring in code). "Hermes" in the spec's wording becomes "Job Scout".
+- **No Hermes integration.** Job Scout borrows Hermes' design (pass codes, weights, X query buckets, scoring in code), and "Hermes" in the spec's wording becomes "Job Scout".
+- **The parallel run is separate.** Rahat will run Job Scout next to Mina for a couple of days and compare by hand, but that testing isn't part of Job Scout, the demo or the template.
 - **Demo shape:** one forkable n8n template.
   1. A daily search runs on inputs anyone can change after importing it.
   2. Results go to Telegram.
@@ -164,11 +165,13 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 **Telegram**
 - **Bot:** display name "Job Scout", username `jobscout_n8n_bot`. The username can't be changed later.
 - **Messages:** one header message ("Job Scout: N new leads today", with sound), then one silent message per lead. Each lead shows role, company, pay, location, fit score with its breakdown, a one-line reason it fits, and "Referral available" when set.
-- **Buttons on each lead:** Open posting, Find people, Search LinkedIn, Referral, Pass.
+- **Buttons on each lead:** Open posting, Find people, Search LinkedIn, Referral, Applied, Pass.
 - **Lead states:** New, then Picked, Applied, or Passed.
-  - **Find people** marks the lead Picked. The reply has the apply link, key facts, up to 4 people (likely hiring manager, a team member, a recruiter, anyone Rahat already knows) with a reason and links (LinkedIn, plus GitHub and X when found), and an **Applied** button.
-  - **Applied** records that Rahat submitted the application. The lead stops appearing.
-  - **Pass** means "not for me". It opens a short form with the lead prefilled, a reason code and an optional note. The link is signed. The lead stops appearing.
+  - **Find people** marks the lead Picked. It runs at most 3 web searches per tap, and a second tap re-sends the saved list. The reply has the apply link, key facts, up to 4 people (likely hiring manager, a team member, a recruiter, anyone Rahat already knows) with a reason and links (LinkedIn, plus GitHub and X when found), and an **Applied** button.
+  - **Applied** records that Rahat submitted the application. It works from New or Picked. The lead stops appearing.
+  - **Pass** means "not for me". It opens a short form with the lead prefilled, a required reason code and an optional note. The link is signed. The lead stops appearing.
+  - **Referral** flags the lead's company, so every current and future lead from it gets the referral points.
+  - **No undo button.** Fix a mis-tap on the Data tables page, or ask Claude over MCP.
 - **Pass-reason codes:** the 10 codes in the Hermes spec's section 1 table. Drop the seed data's `role_too_backend` and `location_mismatch`.
 - **Not in the proof of concept:** phone commands, a Telegram Trigger, the "learn from passes" step (after the parallel run), and the "sent automatically with n8n" line (turned off).
 
@@ -194,12 +197,44 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 - Real postings in the video, with personal details and applied-to companies hidden.
 - One n8n template.
 
+**Lead lifecycle** (decided in grilling, 2026-09-30; terms in `CONTEXT.md`)
+- **Identity:** a lead is keyed by board + ATS job ID. A hiring post that links to a posting merges into that lead, with X added as a source. A hiring post with no posting link becomes an X-only lead, keyed by the post, if Jev judges it a real opening.
+- **Filters first:** postings that fail location, pay floor or title exclusions are stored as Filtered with the reason, and never sent. No stated pay passes the pay floor and shows as "Pay not listed".
+- **Unknown location:** an X-only lead with no stated location passes the location filter and shows as "Location unclear". Only a clearly wrong location filters it out.
+- **Boards outside the config:** an X post that links to a posting at a company not in the board list still becomes a lead. The board list changes only when Rahat edits the config.
+- **Scoring failures:** retry. If scoring still fails, the lead is saved Unscored and scored on the next scan. The header reports how many couldn't be scored.
+- **Sending:**
+  - The minimum fit score is 60 (config).
+  - New leads that miss the daily cap stay New and compete later.
+  - A lead is never sent twice.
+  - The first scan scores everything and sends the top 10 as usual.
+- **Freshness window:** 30 days (config). The freshness sub-score decays across it, and New leads past it are no longer sent.
+- **Closed:** when a posting disappears from its board, the lead is marked Closed quietly, with no message.
+- **Empty day:** a short "no new leads" message with counts: scanned, filtered, unscored.
+- **Crash:** an error workflow sends "Job Scout scan failed" with the node and the error to the same chat.
+- **Suggested contacts:** for a lead from a hiring post, the post's author is the first candidate. X data is stored as handle and reason only.
+- **No reminders** for Picked leads in the proof of concept.
+- **MCP "set lead status"** can also move a lead back to New, as the undo path.
+
+**Build shape** (ADR 0005)
+- An n8n gallery template is one workflow JSON, so Job Scout is one workflow with several triggers.
+- Importing a template drops workflow settings. The error workflow must be set up by hand after import, and a sticky note should explain how.
+
+**Docs for ticket work**
+- `CONTEXT.md`: the glossary (lead, posting, board, hiring post, pick, pass, suggested contact, fit score, and so on).
+- `docs/adr/`:
+  - 0001: never contact or apply
+  - 0002: no LinkedIn automation
+  - 0003: hybrid scoring
+  - 0004: X through HTTP Request, not the X node
+  - 0005: one workflow, many triggers
+
 ## Check with a spike before building
 
 - Telegram URL buttons on Rahat's phone: in-app browser or external browser, and whether Telegram fetches button URLs.
 - The "Search LinkedIn" URL opens LinkedIn's people search correctly on the phone.
 - The named tunnel: webhook, form and signed-link URLs resolve from the phone.
-- Jev vs Claude: score the same 20–30 leads both ways during the parallel run.
+- Jev vs Claude: score the same 20–30 leads both ways (Rahat's own testing, outside the demo).
 
 ## Still open
 
