@@ -67,6 +67,8 @@ The docs now mark the plain `docker run` page as "**This content is outdated.** 
    ```
    `N8N_RUNNERS_ENABLED` "is deprecated from n8n 2.0. You no longer need to set it" [same page]. **[Inference]** For Job Scout, this single container is enough. The Compose stack's sandbox only serves n8n Assistant, which Job Scout doesn't need. Use `GENERIC_TIMEZONE=America/Chicago` so the Schedule Trigger fires on DFW time.
 
+   **Correction (2026-09-29):** for the Coolify deployment, keep the task-runner sidecar. n8n now marks internal runner mode deprecated and not for production on instances that hold secrets. See [job-scout-coolify.md](job-scout-coolify.md) section 2.1.
+
 **Cloud trial and plans**
 - The trial is 14 days with Pro features, "a limit of 1000 executions and the same computing power as the Starter plan". When it ends, "n8n deletes your workspace". You have 90 days to download workflows ([start-your-free-trial](https://docs.n8n.io/deploy/use-n8n-cloud/start-your-free-trial.md)).
 - Pricing page, as rendered 2026-09-29 ([n8n.io/pricing](https://n8n.io/pricing/)):
@@ -167,6 +169,7 @@ The docs list these chat model sub-nodes: Anthropic, AWS Bedrock, Azure AI Found
   - Requirements: "Your n8n instance to be reachable from Slack over public HTTPS ... an instance running on localhost won't work."
   - Set Interactivity Request URL = `https://<host>/webhook-waiting-slack`, and put the app's Signing Secret in the credential. This works only for the Approval response type. Free Text and Custom Form fall back to link buttons [Doc: Slack approvals].
 - **Discord Send and Wait** needs a Bot or OAuth2 credential, not a Discord webhook credential [Source: `Discord/v2/actions/message/index.ts`].
+- **Telegram native approvals (added 2026-09-29):** at 2.41.3 the Telegram Approval response type has an "Approve Within Chat" option. It uses callback buttons that resolve inside Telegram, like Slack's. See [job-scout-telegram.md](job-scout-telegram.md).
 
 **Wait node**
 - Resumes after a time interval, at a specified time, on a webhook call (`$execution.resumeUrl`, with optional auth), or on a form submission ([Wait](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait.md)).
@@ -465,6 +468,7 @@ Assumes Cloud trial first. Effort figures are rough [Opinion].
 - Creator program page: https://n8n.io/creators/
 - Creator hub: https://n8n.notion.site/n8n-Creator-hub-7bd2cbe0fce0449198ecb23ff4a2f76f
 - Template submission guidelines: https://n8n.notion.site/99598944767340dab402c90b124b1f77
+  - Link from the Creator hub, as of 2026-09-29: https://n8n.notion.site/Template-submission-guidelines-9959894476734da3b402c90b124b1f77
 - Sticky note guidelines: https://n8n.notion.site/2aa5b6e0c94f8058b0aefddd02655887
 - n8n Senior Developer Advocate, US posting: https://jobs.ashbyhq.com/n8n/33e46e4f-85b9-49ca-a010-16586c118c50
 
