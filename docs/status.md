@@ -1,6 +1,6 @@
 # Job Scout: status
 
-Last updated: 2026-09-30. Phase: **research, done for now**. The spec and tickets come next, when Rahat invokes those skills.
+Last updated: 2026-09-30. Phase: **spec published** as [issue #1](https://github.com/Rahat-ch/jobsearchautomations/issues/1). Tickets come next, from `/to-tickets`.
 
 ## What Job Scout is
 

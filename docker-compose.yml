@@ -1,19 +1,45 @@
+# Job Scout: local n8n plus a Cloudflare named tunnel.
+# Values come from .env (git-ignored). Each variable is passed explicitly, so the API keys
+# held in .env never reach the n8n container's environment.
 name: n8n-job-scout
 services:
   n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
+    # Pinned: n8n 3.0 ships in October 2026. Upgrade deliberately, not on a routine pull.
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:?set N8N_VERSION in .env}
     container_name: n8n-job-scout
     restart: unless-stopped
     ports:
-      - "5678:5678"
+      # Bound to localhost only; the public path is the tunnel.
+      - "127.0.0.1:5678:5678"
     environment:
-      - GENERIC_TIMEZONE=America/Chicago
-      - TZ=America/Chicago
-      - N8N_RUNNERS_ENABLED=true
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - TZ=${TZ}
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      # Public URLs for webhooks and forms (phone buttons), served through the tunnel.
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
+      - N8N_PROXY_HOPS=${N8N_PROXY_HOPS}
+      # Durable scheduler: a scan missed during a restart can still run.
+      - N8N_SCHEDULER_ENABLED=${N8N_SCHEDULER_ENABLED}
+      - N8N_USE_WORKFLOW_PUBLICATION_SERVICE=${N8N_USE_WORKFLOW_PUBLICATION_SERVICE}
+      # Instance-level MCP for Claude Code, locked on via env.
+      - N8N_MCP_MANAGED_BY_ENV=${N8N_MCP_MANAGED_BY_ENV}
+      - N8N_MCP_ACCESS_ENABLED=${N8N_MCP_ACCESS_ENABLED}
     volumes:
+      # Holds the SQLite database, Data Tables and the encryption key. Keep the name.
       - n8n_data:/home/node/.n8n
       - ./workflows:/workflows
+
+  cloudflared:
+    # Named tunnel for the jobscout subdomain. The public hostname route
+    # (jobscout subdomain -> http://n8n:5678) is set in the Cloudflare dashboard.
+    image: cloudflare/cloudflared:latest
+    container_name: n8n-job-scout-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    depends_on:
+      - n8n
 
 volumes:
   n8n_data:
