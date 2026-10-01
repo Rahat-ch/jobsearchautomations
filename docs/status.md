@@ -26,12 +26,13 @@ The Hermes board design may become the UI later. The proof of concept has no fro
   2. Results go to Telegram.
   3. When Rahat picks a lead, Job Scout returns the apply link with key facts, and suggests people to contact with a reason for each.
 - **Job Scout never sends DMs or messages to anyone.** It only suggests. Rahat reaches out by hand.
+- **Demo focus: automated job retrieval** (decided 2026-10-01): scan, filter, score, ping and triage. No people search: the Claude "Find people" step was dropped for cost (about $0.20 per tap); each lead keeps a free Search LinkedIn link (ADR 0002, amended).
 
 ## Decisions made
 
 | Area | Decision | Notes |
 |---|---|---|
-| Engine | n8n, self-hosted | Community Edition is free. Running costs: Jev (about $0.0002 per lead, estimated), Claude for top and picked leads, Claude web search ($10 per 1,000 searches), and X reads ($0.005 per post, capped in config). |
+| Engine | n8n, self-hosted | Community Edition is free. Running costs: Jev (about $0.0002 per lead, estimated), Claude fit lines for the leads that are sent, and X reads ($0.005 per post, capped in config). |
 | Hosting | Local Docker n8n on Rahat's Mac Mini, which runs 24/7 (decided 2026-09-29) | Used for the demo and the Hermes parallel run. Coolify is deferred; its research stays in `job-scout-coolify.md`. Phone buttons reach local n8n through a named Cloudflare tunnel on a subdomain of Rahat's Cloudflare-managed domain (decided 2026-09-30). The web-form Pass design stays. |
 | UI | None for the proof of concept; Telegram only | The Hermes board (columns New, Applied, Interviewing, Offer, Passed, the pass-reason modal and the "Feedback to Hermes" panel) is deferred. Research is kept in `job-scout-board-serving.md`. |
 | Notifications | Telegram | Daily ping with per-lead buttons. See Decisions for the spec. |
@@ -39,7 +40,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 | Starting companies | n8n, PostHog, Ramp (Ashby); Instacart (Greenhouse); Palantir, Spotify (Lever) | Checked 2026-09-29: board names resolve and return jobs. |
 | Comp floor | $180K base | |
 | Scoring and writing | Jev scores, code weights, Claude writes | Hybrid (decided 2026-09-30). Claude uses the Anthropic node, including Web Search for people. |
-| Storage | n8n Data Tables | `leads`, `passes`, `contacts`. Config lives in the config node. No full resume text in n8n; scoring uses a short profile summary. |
+| Storage | n8n Data Tables | `leads`, `passes`, `referrals`, `state`. Config lives in the config node. No full resume text in n8n; scoring uses a short profile summary. |
 | Extra | Instance-level MCP | Basic, read plus one status workflow. Claude Code on camera. |
 
 ## Research docs
@@ -54,7 +55,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 | [`research/job-scout-x.md`](research/job-scout-x.md) | X API: pay-per-use pricing, recent search for hiring posts, routing ATS links, people lookup, storage terms, n8n's X node |
 | [`research/job-scout-jev.md`](research/job-scout-jev.md) | TypeSafe Jev for scoring: API, which primitive fits each sub-score, draft questions, cost, calling it from n8n |
 | [`research/job-scout-x-spike.md`](research/job-scout-x-spike.md) | X spike for #16: Mina's queries run once, results by bucket, ATS link patterns, cost, refinements |
-| [`research/job-scout-find-people-spike.md`](research/job-scout-find-people-spike.md) | Find people spike for #14: prompt, JSON schema, node settings, quality on 3 real leads, cost and latency |
+| [`research/job-scout-find-people-spike.md`](research/job-scout-find-people-spike.md) | Find people spike (not built; dropped for cost): prompt, JSON schema, node settings, quality on 3 real leads, cost and latency |
 | [`research/job-scout-mcp.md`](research/job-scout-mcp.md) | Instance-level MCP: tools, auth, scopes, reading Data Tables, connecting Claude Code and Claude Desktop |
 
 ## Key findings
@@ -159,7 +160,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 **Scoring** (hybrid)
 - **Code:** the location, pay-floor and freshness checks, then applies the weights and computes the total.
 - **Jev:** scores role family, stack, seniority and domain, checks messy location text, and decides "is this X post a real job".
-- **Claude:** writes only for the leads that make the daily cap, and when Rahat taps "Find people".
+- **Claude:** writes the fit line only for the leads that make the daily cap. No other Claude calls.
 - **Role family required** (decided 2026-09-30): a lead whose role family is "None of these" (Jev's top answer) is never sent, whatever its fit score. The lead's `selection_reason` records why a lead was held back.
 - **Consultants** (decided 2026-09-30): Technical Consultant and Solutions Consultant roles count as FDE/Solutions; accounting, finance or business-process consulting (such as Partner Consultant, Accounting) does not.
 - **Account management and customer success** (decided 2026-10-01, issue #11): Technical Account Manager, Account Manager and Customer Success Manager roles are not FDE/Solutions. Customer Success Engineer roles are. The family's description says so, which changes Jev's request, so unsent leads are judged again on the next scan.
@@ -173,9 +174,8 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 **Telegram**
 - **Bot:** display name "Job Scout", username `jobscout_n8n_bot`. The username can't be changed later.
 - **Messages:** one header message ("Job Scout: N new leads today", with sound), then one silent message per lead. Each lead shows role, company, pay, location, fit score with its breakdown, a one-line reason it fits, and "Referral available" when set.
-- **Buttons on each lead:** Open posting, Find people, Search LinkedIn, Referral, Applied, Pass.
-- **Lead states:** New, then Picked, Applied, or Passed.
-  - **Find people** marks the lead Picked. It runs at most 3 web searches per tap, and a second tap re-sends the saved list. The reply has the apply link, key facts, up to 4 people (likely hiring manager, a team member, a recruiter, anyone Rahat already knows) with a reason and links (LinkedIn, plus GitHub and X when found), and an **Applied** button.
+- **Buttons on each lead:** Open posting, Applied, Referral, Pass, Search LinkedIn. (Find people was dropped on 2026-10-01; see Scope.)
+- **Lead states:** New, then Applied or Passed.
   - **Applied** records that Rahat submitted the application. It works from New or Picked. The lead stops appearing.
   - **Pass** means "not for me". It opens a short form with the lead prefilled, a required reason code and an optional note. The link is signed. The lead stops appearing.
   - **Referral** flags the lead's company, so every current and future lead from it gets the referral points.
@@ -184,7 +184,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 - **Not in the proof of concept:** phone commands, a Telegram Trigger, the "learn from passes" step (after the parallel run), and the "sent automatically with n8n" line (turned off).
 
 **Action links** (built in issue #12, 2026-10-01)
-- **Buttons:** each lead message has two rows: **Open posting**, then **Applied**, **Referral** and **Pass** (Pass added in issue #13). Find people and Search LinkedIn come in later tickets.
+- **Buttons:** each lead message has two rows: **Open posting**, then **Applied**, **Referral** and **Pass** (Pass added in issue #13). Search LinkedIn comes in #14.
 - **Signature:** HMAC-SHA256 of `<action>:<lead key>` with the signing secret, as hex, cut to the first 32 characters (128 bits), compared character by character in constant time. An Applied signature doesn't work on Referral, or the reverse.
   - The secret is 32 random bytes in hex, made on the first run by the Crypto node's Generate action and kept in the `state` Data Table (`key` `signing_secret`). It isn't in the config, the repo or any message.
   - The HMAC is written out in JavaScript in the three Code nodes that sign (one shared block). At 2.41.3 the Code node can't `require('crypto')` unless `NODE_FUNCTION_ALLOW_BUILTIN` allows it (the task runner's default is none), and the Crypto node v2's HMAC reads its secret from a Crypto credential, which every template importer would have to create. The tests check every link against Python's `hmac`.
@@ -208,16 +208,13 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 - **Schema:** `passed_at` (date) on `leads` (added to both tables, rows kept, and to the create step); new table `passes` (`lead_key`, `reason_code`, `note`, `passed_at`), created in the setup chain.
 - **Still to check on the phone (#15):** whether Telegram fetches button URLs. "Ignore Bots" answers known bots with 403, and a GET from a real browser acts at once. Opening the Pass form changes nothing; only submitting it does.
 
-**People search**
-- Claude web search, through the Anthropic node's Web Search option, returns people with public profile links and cited sources.
-- A "Search LinkedIn" button opens LinkedIn's own people search, prefilled.
-- No LinkedIn automation, and nothing logs into Rahat's LinkedIn account.
+**People search** (dropped 2026-10-01)
+- No Claude people search. A "Search LinkedIn" button opens LinkedIn's own people search, prefilled; Rahat browses by hand. No LinkedIn automation (ADR 0002).
 
 **Tracking**
 - **n8n Data Tables**, stored in local n8n's SQLite database:
   - `leads`: status and a date for each status change, plus referral.
   - `passes`
-  - `contacts`
 - **Rahat views them** on n8n's Data tables page (with Download CSV), or through Claude over MCP.
 - **The private job-search log stays separate**, with no sync.
 
@@ -264,8 +261,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
   - So Job Scout has an Error Trigger (**Scan crashed**) → **Build crash alert** → **Send crash alert**. Nothing has to be set after a template import. The alert reads the chat ID from the config node's parameters (`$('Job Scout config').params`), which works without that node running, so `telegramChatId` must stay a plain value.
   - Text: "Job Scout scan failed at <step>: <error>" plus a link to the failed execution. A Code node's error carries no node name, so the step comes from `execution.lastNodeExecuted`, which is the node that failed.
   - Checked once for real on 2026-10-01: a published copy with a broken Board list node, run in production mode through MCP, failed (execution mode `trigger`), n8n ran its own Error Trigger (mode `error`), and Telegram returned `ok: true` for a "[Test]" alert. The copy was deleted.
-- **Suggested contacts:** for a lead from a hiring post, the post's author is the first candidate. X data is stored as handle and reason only.
-- **No reminders** for Picked leads in the proof of concept.
+- X data is stored as IDs, handles and links only.
 - **MCP "set lead status"** can also move a lead back to New, as the undo path.
 
 **Build shape** (ADR 0005)
@@ -273,7 +269,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 - Importing a template drops workflow settings. The crash alert doesn't need one: the workflow's own Error Trigger runs when no error workflow is set (issue #10). A sticky note says so.
 
 **Docs for ticket work**
-- `CONTEXT.md`: the glossary (lead, posting, board, hiring post, pick, pass, suggested contact, fit score, and so on).
+- `CONTEXT.md`: the glossary (lead, posting, board, hiring post, pass, fit score, and so on).
 - `docs/adr/`:
   - 0001: never contact or apply
   - 0002: no LinkedIn automation

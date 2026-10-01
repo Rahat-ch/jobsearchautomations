@@ -1,6 +1,6 @@
 # Job Scout
 
-Job Scout finds job openings for one job seeker every day, scores them against the job seeker's profile, and sends the best ones to Telegram for triage. It never applies for jobs or contacts anyone.
+Job Scout finds job openings for one job seeker every day, scores them against the job seeker's profile, and sends the best ones to Telegram for triage. It never applies for jobs, contacts anyone, or searches for people.
 
 ## Language
 
@@ -9,10 +9,6 @@ Job Scout finds job openings for one job seeker every day, scores them against t
 **Job seeker**:
 The one person a Job Scout instance works for. In this repo that is Rahat; in a forked template it is whoever imported it.
 _Avoid_: User, candidate, owner
-
-**Suggested contact**:
-A person at a lead's company whom Job Scout suggests the job seeker reach out to, with a reason. Job Scout never contacts them. For a lead that came from a hiring post, the post's author is the first candidate. A lead's suggested contacts are found once and reused.
-_Avoid_: Contact, referral target, outreach target, lead
 
 **Referral**:
 The job seeker has someone at a company willing to refer them. It is a flag on the company, set from any of its leads, and applies to all its current and future leads. Companies are matched by name, ignoring case, spaces and punctuation.
@@ -96,15 +92,11 @@ The most leads the daily ping sends, highest fit score first. New leads that mis
 _Avoid_: Limit, top N
 
 **Lead status**:
-Where a lead stands with the job seeker: New, Picked, Applied or Passed. Separately, a lead is **Closed** when its posting disappears from its board; this is recorded quietly and a Closed New lead is no longer sent.
+Where a lead stands with the job seeker: New, Applied or Passed. Separately, a lead is **Closed** when its posting disappears from its board; this is recorded quietly and a Closed New lead is no longer sent.
 _Avoid_: Stage, column, state
 
-**Pick**:
-The job seeker choosing a lead to pursue by tapping Find people. It moves the lead to Picked and returns the apply link, key facts and suggested contacts.
-_Avoid_: Select, like, save, interested
-
 **Applied**:
-The job seeker has submitted an application for the lead. It can follow New or Picked. Job Scout records it; it never applies.
+The job seeker has submitted an application for the lead. It follows New. Job Scout records it; it never applies.
 _Avoid_: Submitted
 
 **Action link**:
@@ -112,7 +104,7 @@ A button on a lead message that changes the lead when tapped, such as Applied or
 _Avoid_: Callback, magic link
 
 **Pass**:
-The job seeker deciding not to pursue a lead. It moves the lead to Passed and always carries a pass reason. It can follow New or Picked, not Applied. A lead has one pass reason; passing it again replaces the reason and keeps the date.
+The job seeker deciding not to pursue a lead. It moves the lead to Passed and always carries a pass reason. It follows New, not Applied. A lead has one pass reason; passing it again replaces the reason and keeps the date.
 _Avoid_: Reject, dismiss, skip, archive
 
 **Pass reason**:
