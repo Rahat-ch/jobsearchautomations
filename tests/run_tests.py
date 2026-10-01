@@ -261,6 +261,7 @@ EXPECTED = {
     "Finance Manager, Revenue Accounting": "excluded_title",
     "Frontend Engineer": "passed",  # on-site in Dallas
     "Customer Engineer": "location",  # on-site in Austin
+    "Technical Support Engineer": "pay_floor",  # $40-$60 an hour = $83.2K-$124.8K a year
     # scoring fixture
     "Developer Advocate, Platform": "passed",  # pay only in the description, below the floor
     "Senior Product Engineer, Growth": "passed",  # pay only in the description
@@ -268,7 +269,7 @@ EXPECTED = {
     # Greenhouse: Instacart (real)
     "Senior Software Engineer II, AI Labs & Foundations": "passed",  # base $192K-$242.5K across state ranges
     "Senior AI Solutions Sales Executive": "pay_floor",  # base tops out at $154K; the $220K OTE range is ignored
-    "Billing Operations Associate": "passed",  # hourly ranges: pay unknown
+    "Billing Operations Associate": "pay_floor",  # hourly: $28.37-$32.94 x 2,080 hours tops out at $68.5K
     "Senior Product Manager, AI Control Studio": "location",  # Canada copy, though it lists a US remote office
     "iOS Developer": "location",  # hybrid in Israel
     # Lever: Spotify (real)
@@ -289,7 +290,7 @@ EXPECTED = {
     "Partner Engineer, Integrations": "passed",  # hybrid in London, "Remote (US)" in allLocations
     "Senior Frontend Engineer, Austin": "location",  # "onsite" in Austin
     "Product Engineer, Payments": "pay_floor",  # $12K-$14K a month = $144K-$168K a year
-    "Contract Frontend Engineer": "passed",  # hourly: pay unknown
+    "Contract Frontend Engineer": "passed",  # $90-$110 an hour x 2,080 hours = $187.2K-$228.8K a year
     "Partner Solutions Engineer": "passed",  # "unspecified", no location: unclear
     "Developer Advocate, EMEA": "location",  # remote in Stockholm or London
 }
@@ -883,6 +884,8 @@ def case_filters_store_the_failed_rule(wf):
     assert pay("Software Engineer, Frontend") == (143200, 284000)
     assert pay("Senior Frontend Engineer") == (140000, 170000), "commission counted as base pay"
     assert pay("Software Engineer Intern") == (150000, 150000), "monthly pay not made yearly"
+    assert pay("Technical Support Engineer") == (83200, 124800), "hourly pay not counted at 2,080 hours"
+    assert rows[FBY_TITLE["Technical Support Engineer"]]["pay_text"] == "$40 – $60 per hour, ≈ $83.2K – $124.8K a year"
     assert pay("Solutions Architect") == (None, None), "EUR pay must stay unknown"
     assert pay("Developer Experience Engineer") == (None, None)
 
@@ -958,7 +961,9 @@ def case_config_defaults_match_spec(wf):
     fde = next(f["description"] for f in cfg["roleFamilies"] if f["name"] == "FDE/Solutions")
     assert "technical or solutions consultants" in fde and "Not accounting" in fde, fde
     # Rahat, 2026-10-01 (#11): account management and customer success aren't FDE/Solutions.
-    assert "Not account management or customer success" in fde and "technical account managers" in fde, fde
+    assert "Not account management or customer success management" in fde and "technical account managers" in fde, fde
+    # Rahat, 2026-10-01: customer success engineers stay in; partner, alliances and SI roles are out.
+    assert "customer success engineers" in fde and "systems-integrator" in fde, fde
     # Scoring (spec #1, issue #9).
     assert cfg["weights"] == WEIGHTS, cfg["weights"]
     assert cfg["minFitScore"] == 60 and cfg["freshnessWindowDays"] == 30 and cfg["dailyCap"] == 10
@@ -978,7 +983,8 @@ def case_config_defaults_match_spec(wf):
 NORMALIZED = {
     "Senior Software Engineer II, AI Labs & Foundations": ("Remote", "", "$192K – $242.5K (by location)", 192000, 242500),
     "Senior AI Solutions Sales Executive": ("Remote", "", "$122K – $154K (by location)", 122000, 154000),
-    "Billing Operations Associate": ("Remote", "", "$28.37 – $32.94 an hour (by location)", None, None),
+    "Billing Operations Associate": ("Remote", "", "$28.37 – $32.94 an hour, ≈ $59K – $68.5K a year (by location)",
+                                     59010, 68515),
     "Senior Product Manager, AI Control Studio": ("Remote", "", "194K – 204.5K CAD", None, None),
     "iOS Developer": ("Hybrid", "", "", None, None),
     "Backend Engineer - Music": ("Remote", "Boston, MA; Miami, FL", "", None, None),
@@ -996,7 +1002,7 @@ NORMALIZED = {
     "Partner Engineer, Integrations": ("Hybrid", "Remote (US)", "", None, None),
     "Senior Frontend Engineer, Austin": ("OnSite", "", "$190K – $220K a year", 190000, 220000),
     "Product Engineer, Payments": ("Remote", "", "$12K – $14K a month", 144000, 168000),
-    "Contract Frontend Engineer": ("Remote", "", "$90.00 – $110.00 an hour", None, None),
+    "Contract Frontend Engineer": ("Remote", "", "$90.00 – $110.00 an hour, ≈ $187.2K – $228.8K a year", 187200, 228800),
     "Partner Solutions Engineer": ("", "", "", None, None),
     "Developer Advocate, EMEA": ("Remote", "London", "90K – 110K EUR a year", None, None),
 }
@@ -1062,7 +1068,8 @@ def case_greenhouse_and_lever_location_and_pay_rules(wf):
     # on-site; Greenhouse's workplace type comes from the location name; DFW hybrid or
     # on-site passes, Austin fails, a "Remote (US)" secondary location counts, no
     # location is "Location unclear"; Greenhouse OTE ranges and Lever monthly pay are
-    # handled like Ashby's, and hourly or non-USD pay is unknown.
+    # handled like Ashby's, hourly pay counts at 2,080 hours a year (an hourly range
+    # above the floor passes), and non-USD pay is unknown.
     reset_test_tables()
     now = datetime.now(timezone.utc)
     keys = [*GHFKEY, *LVFKEY]
@@ -1079,7 +1086,8 @@ def case_greenhouse_and_lever_location_and_pay_rules(wf):
     header, leads = sent(run_data)
     check_sent_order(leads, fit_order(want_sent))
     text = {ALL_KEYS[m["lead_key"]]["title"]: m["text"] for m in leads}
-    assert "Pay: $90.00 – $110.00 an hour" in text["Contract Frontend Engineer"], text["Contract Frontend Engineer"]
+    assert "Pay: $90.00 – $110.00 an hour, ≈ $187.2K – $228.8K a year" in text["Contract Frontend Engineer"], \
+        text["Contract Frontend Engineer"]
     assert "Location: Location unclear" in text["Partner Solutions Engineer"]
     assert "Location: London · Hybrid · Remote (US) option" in text["Partner Engineer, Integrations"]
     # The Greenhouse department (Marketing) never reaches Jev.

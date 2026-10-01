@@ -160,7 +160,9 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 - **Claude:** writes only for the leads that make the daily cap, and when Rahat taps "Find people".
 - **Role family required** (decided 2026-09-30): a lead whose role family is "None of these" (Jev's top answer) is never sent, whatever its fit score. The lead's `selection_reason` records why a lead was held back.
 - **Consultants** (decided 2026-09-30): Technical Consultant and Solutions Consultant roles count as FDE/Solutions; accounting, finance or business-process consulting (such as Partner Consultant, Accounting) does not.
-- **Account management and customer success** (decided 2026-10-01, issue #11): Technical Account Manager, Account Manager and Customer Success Manager roles are not FDE/Solutions. The family's description says so, which changes Jev's request, so unsent leads are judged again on the next scan.
+- **Account management and customer success** (decided 2026-10-01, issue #11): Technical Account Manager, Account Manager and Customer Success Manager roles are not FDE/Solutions. Customer Success Engineer roles are. The family's description says so, which changes Jev's request, so unsent leads are judged again on the next scan.
+- **Partner roles** (decided 2026-10-01): partner, alliances and systems-integrator consulting roles (such as Ramp's Senior Partner Consultant, Systems Integrators) are not FDE/Solutions. Technical and Solutions Consultants still are. Technical Program Manager stays in DevEx/Product PM.
+- **Hourly pay** (decided 2026-10-01): hourly base pay counts toward the pay floor at 2,080 hours a year, on every ATS. The message shows the hourly range and the yearly estimate, such as "$28.37 – $32.94 an hour, ≈ $59K – $68.5K a year".
 - **Fit line model:** Claude Sonnet 5.5 (`claude-sonnet-5-5`).
 - **Seniority:** Senior, Lead and Founding Engineer are the focus. Junior, mid-level, Staff+ and manager titles score low.
 - **Referral:** 0 by default. A Telegram button on a lead marks "I have a referral" and adds the referral points.
@@ -220,7 +222,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
   - If the posting is listed again, `closed_at` is cleared and the lead is open again (same key, no new lead).
 - **Reading boards** (issue #7, 2026-10-01; checked against the live Instacart, Palantir and Spotify boards):
   - Greenhouse: the location comes from `location.name` only, and the workplace type is read from it ("Remote", "Hybrid", "on-site"). The `offices` list is ignored, because Instacart's Canada copies of a role list "Remote - United States" as an office.
-  - Greenhouse pay: `pay_input_ranges` (one range per group of states at Instacart). Ranges titled OTE, commission, bonus or incentive are skipped. The ranges carry no interval, so amounts under $1,000 are taken as hourly. Hourly pay, like Ashby's, doesn't count toward the pay floor: it shows in the message and the lead passes as if pay were unknown.
+  - Greenhouse pay: `pay_input_ranges` (one range per group of states at Instacart). Ranges titled OTE, commission, bonus or incentive are skipped. The ranges carry no interval, so amounts under $1,000 are taken as hourly.
   - Lever: live `workplaceType` is `onsite`, `hybrid` or `remote`; `on-site` (the docs' spelling) is also accepted. `country` places the primary location, and `allLocations` are secondary locations. Pay comes from `salaryRange` in USD per year or per month. Lever has no company name, so the company is the site name, as with Ashby.
   - Location: a non-remote place with no city is "Location unclear" only when it names the US or a metro's region ("United States", "Texas"); a lone city outside the metros ("Stockholm", "San Francisco- Hybrid") fails. Common non-US cities and countries are listed for places with no country code.
 - **Empty day:** a short "no new leads" message with counts: scanned, filtered, unscored.

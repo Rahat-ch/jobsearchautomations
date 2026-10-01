@@ -834,6 +834,60 @@
         "summaryComponents": []
       },
       "descriptionPlain": "Synthetic posting for the Job Scout filter tests."
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000023",
+      "title": "Technical Support Engineer",
+      "department": "Support",
+      "team": "Support",
+      "employmentType": "FullTime",
+      "location": "Remote (US)",
+      "secondaryLocations": [],
+      "publishedAt": "2026-09-16T15:00:00.000+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "United States"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/testco/00000000-0000-4000-8000-000000000023",
+      "applyUrl": "https://jobs.ashbyhq.com/testco/00000000-0000-4000-8000-000000000023/application",
+      "shouldDisplayCompensationOnJobPostings": true,
+      "compensation": {
+        "compensationTierSummary": "$40 – $60 per hour",
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [
+          {
+            "id": "tier-23",
+            "tierSummary": "$40 – $60 per hour",
+            "title": null,
+            "additionalInformation": null,
+            "components": [
+              {
+                "summary": "$40 – $60 per hour",
+                "compensationType": "Salary",
+                "interval": "1 HOUR",
+                "currencyCode": "USD",
+                "minValue": 40,
+                "maxValue": 60,
+                "id": "comp-23-0"
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "compensationType": "Salary",
+            "interval": "1 HOUR",
+            "currencyCode": "USD",
+            "minValue": 40,
+            "maxValue": 60
+          }
+        ]
+      },
+      "descriptionPlain": "Synthetic posting for the Job Scout filter tests."
     }
   ]
 }
