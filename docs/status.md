@@ -53,6 +53,8 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 | [`research/job-scout-outreach.md`](research/job-scout-outreach.md) | Finding people to contact: LinkedIn's terms and API, Claude web search in n8n, GitHub and posting text, search APIs, browser-automation nodes |
 | [`research/job-scout-x.md`](research/job-scout-x.md) | X API: pay-per-use pricing, recent search for hiring posts, routing ATS links, people lookup, storage terms, n8n's X node |
 | [`research/job-scout-jev.md`](research/job-scout-jev.md) | TypeSafe Jev for scoring: API, which primitive fits each sub-score, draft questions, cost, calling it from n8n |
+| [`research/job-scout-x-spike.md`](research/job-scout-x-spike.md) | X spike for #16: Mina's queries run once, results by bucket, ATS link patterns, cost, refinements |
+| [`research/job-scout-find-people-spike.md`](research/job-scout-find-people-spike.md) | Find people spike for #14: prompt, JSON schema, node settings, quality on 3 real leads, cost and latency |
 | [`research/job-scout-mcp.md`](research/job-scout-mcp.md) | Instance-level MCP: tools, auth, scopes, reading Data Tables, connecting Claude Code and Claude Desktop |
 
 ## Key findings
@@ -144,7 +146,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 8. Daily run time. Default: 8:00 am Central.
 9. Score weights. Default: Hermes' role family 25, stack 20, ownership/seniority 15, location 15, domain 10, freshness 10, referral 5. All four role families score equally.
 
-**X default queries** (Mina's five buckets, last 7 days, each ending in `-is:retweet lang:en`; the largest is about 370 of 512 characters)
+**X default queries** (Mina's five buckets, last 7 days, each ending in `-is:retweet lang:en`; the largest is 464 of 512 characters)
 1. **DevEx/Product PM, remote US:** Product Manager, Technical PM, Senior PM, Product Lead, Group PM, Platform PM. Combined with DevEx, developer platform, devtools, APIs, SDKs, integrations, developer productivity, or AI developer product. Plus hiring, opening or apply, and remote, remote US or US remote.
 2. **DevEx/Product PM, DFW:** the same titles and keywords. Plus Dallas, DFW, Frisco, Plano, Irving, Arlington, Richardson, Addison, McKinney, or Texas.
 3. **FDE / Solutions:** "forward deployed engineer", "AI solutions engineer", "solutions architect", "solutions engineer", "field engineer", or "customer engineer". Plus hiring, opening or apply, and Remote-US or Texas/DFW terms.
