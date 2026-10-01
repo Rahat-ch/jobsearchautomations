@@ -194,6 +194,10 @@ EXPECTED = {
     "Solutions Architect": "passed",  # pay only in EUR: unknown
     "Software Engineer Intern": "pay_floor",  # $12.5K a month = $150K a year
     "Partner Engineer": "location",  # Arlington, VA is not Arlington, TX
+    "Software Engineer, Finance Platform": "passed",  # "Engineer" overrides "Finance"
+    "Finance Manager, Revenue Accounting": "excluded_title",
+    "Frontend Engineer": "passed",  # on-site in Dallas
+    "Customer Engineer": "location",  # on-site in Austin
 }
 PASSED = [k for k in KEY if EXPECTED[KEY[k]["title"]] == "passed"]
 NEWEST_FIRST = sorted(PASSED, key=lambda k: KEY[k]["publishedAt"], reverse=True)
@@ -338,6 +342,7 @@ def case_filters_store_the_failed_rule(wf):
     basis = lambda t: rows[FBY_TITLE[t]]["location_basis"]
     assert basis("Software Engineer, Frontend") == "us_remote"
     assert basis("Senior Product Engineer") == "metro"
+    assert basis("Frontend Engineer") == "metro"
     assert basis("Solutions Engineer") == "unclear"
     pay = lambda t: (rows[FBY_TITLE[t]]["pay_min"], rows[FBY_TITLE[t]]["pay_max"])
     assert pay("Software Engineer, Frontend") == (143200, 284000)
@@ -395,6 +400,9 @@ def case_config_defaults_match_spec(wf):
     assert excluded == ["accountant", "finance", "legal", "counsel", "paralegal", "hr", "people ops",
                         "people operations", "office manager", "facilities", "executive assistant"], excluded
     assert "marketing" not in excluded, "DevRel roles often sit in Marketing"
+    assert [t.lower() for t in cfg["excludedTitleOverrides"]] == [
+        "engineer", "engineering", "developer", "software", "swe", "architect", "programmer",
+        "advocate", "devrel", "product manager", "pm", "platform"]
     rules = cfg["locationRules"]
     assert rules["usRemote"] is True
     (dfw,) = rules["metros"]
@@ -403,6 +411,7 @@ def case_config_defaults_match_spec(wf):
                  "Garland", "Lewisville", "Coppell"]:
         assert city in dfw["cities"], city
     assert "Austin" not in dfw["cities"]
+    assert dfw["workplaceTypes"] == ["Remote", "Hybrid", "OnSite"]
     assert [f["name"] for f in cfg["roleFamilies"]] == [
         "DevEx/Product PM", "FDE/Solutions", "Product/Frontend Engineering", "DevRel/DevEx"]
     assert all(f["titleKeywords"] for f in cfg["roleFamilies"])

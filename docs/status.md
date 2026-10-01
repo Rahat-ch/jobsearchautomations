@@ -135,7 +135,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 
 **Config node** (one "Job Scout config" node with a sticky note per field)
 1. Target role title keywords and exclusions. Default: per-family keywords from Mina's X buckets.
-2. Location rules. Default: remote US, or remote or hybrid anywhere in the Dallas–Fort Worth area (suburbs and Fort Worth included). Austin is out. Include every listing that offers US remote, including Ramp-style listings where "Remote (US)" appears only as a secondary location.
+2. Location rules. Default: remote US, or remote, hybrid or on-site anywhere in the Dallas–Fort Worth area (suburbs and Fort Worth included). Austin hybrid or on-site roles fail; remote US roles based in Austin pass (on-site and Austin decided 2026-09-30). Include every listing that offers US remote, including Ramp-style listings where "Remote (US)" appears only as a secondary location.
 3. Pay floor. Default: $180K base.
 4. Companies, by board. Ashby: n8n, PostHog, Ramp. Greenhouse: Instacart. Lever: Palantir, Spotify.
 5. X search: on/off (off by default in the template), query buckets, and a monthly spending cap with presets of $5, $10 and $25.
@@ -200,7 +200,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 **Lead lifecycle** (decided in grilling, 2026-09-30; terms in `CONTEXT.md`)
 - **Identity:** a lead is keyed by board + ATS job ID. A hiring post that links to a posting merges into that lead, with X added as a source. A hiring post with no posting link becomes an X-only lead, keyed by the post, if Jev judges it a real opening.
 - **Filters first:** postings that fail location, pay floor or title exclusions are stored as Filtered with the reason, and never sent. No stated pay passes the pay floor and shows as "Pay not listed".
-- **Excluded titles** (decided 2026-09-30): the default list is non-engineering operations titles only (accountant, finance, legal, counsel, paralegal, HR, people ops, office manager, facilities, executive assistant), matched on whole words in the title. The department and team fields are never used, because DevRel and Developer Advocate roles often sit in Marketing.
+- **Excluded titles** (decided 2026-09-30): the default list is non-engineering operations titles only (accountant, finance, legal, counsel, paralegal, HR, people ops, office manager, facilities, executive assistant), matched on whole words in the title. A title that also has an engineering, product or DevRel word (engineer, engineering, developer, software, SWE, architect, programmer, advocate, DevRel, product manager, PM, platform) is never excluded, so "Software Engineer, Finance Platform" passes. The department and team fields are never used, because DevRel and Developer Advocate roles often sit in Marketing.
 - **Unknown location:** an X-only lead with no stated location passes the location filter and shows as "Location unclear". Only a clearly wrong location filters it out.
 - **Boards outside the config:** an X post that links to a posting at a company not in the board list still becomes a lead. The board list changes only when Rahat edits the config.
 - **Scoring failures:** retry. If scoring still fails, the lead is saved Unscored and scored on the next scan. The header reports how many couldn't be scored.

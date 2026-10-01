@@ -718,6 +718,122 @@
         "summaryComponents": []
       },
       "descriptionPlain": "Synthetic posting for the Job Scout filter tests."
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000019",
+      "title": "Software Engineer, Finance Platform",
+      "department": "Engineering",
+      "team": "Engineering",
+      "employmentType": "FullTime",
+      "location": "Remote (US)",
+      "secondaryLocations": [],
+      "publishedAt": "2026-09-19T15:00:00.000+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "United States"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/testco/00000000-0000-4000-8000-000000000019",
+      "applyUrl": "https://jobs.ashbyhq.com/testco/00000000-0000-4000-8000-000000000019/application",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      },
+      "descriptionPlain": "Synthetic posting for the Job Scout filter tests."
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000020",
+      "title": "Finance Manager, Revenue Accounting",
+      "department": "Finance",
+      "team": "Finance",
+      "employmentType": "FullTime",
+      "location": "Remote (US)",
+      "secondaryLocations": [],
+      "publishedAt": "2026-09-20T15:00:00.000+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "United States"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/testco/00000000-0000-4000-8000-000000000020",
+      "applyUrl": "https://jobs.ashbyhq.com/testco/00000000-0000-4000-8000-000000000020/application",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      },
+      "descriptionPlain": "Synthetic posting for the Job Scout filter tests."
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000021",
+      "title": "Frontend Engineer",
+      "department": "Engineering",
+      "team": "Engineering",
+      "employmentType": "FullTime",
+      "location": "Dallas, TX",
+      "secondaryLocations": [],
+      "publishedAt": "2026-09-21T15:00:00.000+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "OnSite",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "USA",
+          "addressRegion": "Texas",
+          "addressLocality": "Dallas"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/testco/00000000-0000-4000-8000-000000000021",
+      "applyUrl": "https://jobs.ashbyhq.com/testco/00000000-0000-4000-8000-000000000021/application",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      },
+      "descriptionPlain": "Synthetic posting for the Job Scout filter tests."
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000022",
+      "title": "Customer Engineer",
+      "department": "Engineering",
+      "team": "Engineering",
+      "employmentType": "FullTime",
+      "location": "Austin, TX",
+      "secondaryLocations": [],
+      "publishedAt": "2026-09-22T15:00:00.000+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "OnSite",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "USA",
+          "addressRegion": "Texas",
+          "addressLocality": "Austin"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/testco/00000000-0000-4000-8000-000000000022",
+      "applyUrl": "https://jobs.ashbyhq.com/testco/00000000-0000-4000-8000-000000000022/application",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      },
+      "descriptionPlain": "Synthetic posting for the Job Scout filter tests."
     }
   ]
 }
