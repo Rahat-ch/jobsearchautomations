@@ -1,6 +1,6 @@
 # Job Scout: status
 
-Last updated: 2026-10-01. Phase: **spec published** as [issue #1](https://github.com/Rahat-ch/jobsearchautomations/issues/1). Tickets come next, from `/to-tickets`.
+Last updated: 2026-10-01. Phase: **build**. The spec is [issue #1](https://github.com/Rahat-ch/jobsearchautomations/issues/1) and the tickets are the other issues. Job Scout is published and running daily; see the README for what it does.
 
 ## What Job Scout is
 
@@ -24,8 +24,8 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 - **Demo shape:** one forkable n8n template.
   1. A daily search runs on inputs anyone can change after importing it.
   2. Results go to Telegram.
-  3. When Rahat picks a lead, Job Scout returns the apply link with key facts, and suggests people to contact with a reason for each.
-- **Job Scout never sends DMs or messages to anyone.** It only suggests. Rahat reaches out by hand.
+  3. Each lead message has buttons to open the posting, search LinkedIn, and mark it Applied, Referral or Pass.
+- **Job Scout never sends DMs or messages to anyone.** Rahat reaches out by hand.
 - **Demo focus: automated job retrieval** (decided 2026-10-01): scan, filter, score, ping and triage. No people search: the Claude "Find people" step was dropped for cost (about $0.20 per tap); each lead keeps a free Search LinkedIn link (ADR 0002, amended).
 
 ## Decisions made
@@ -36,7 +36,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 | Hosting | Local Docker n8n on Rahat's Mac Mini, which runs 24/7 (decided 2026-09-29) | Used for the demo and the Hermes parallel run. Coolify is deferred; its research stays in `job-scout-coolify.md`. Phone buttons reach local n8n through a named Cloudflare tunnel on a subdomain of Rahat's Cloudflare-managed domain (decided 2026-09-30). The web-form Pass design stays. |
 | UI | None for the proof of concept; Telegram only | The Hermes board (columns New, Applied, Interviewing, Offer, Passed, the pass-reason modal and the "Feedback to Hermes" panel) is deferred. Research is kept in `job-scout-board-serving.md`. |
 | Notifications | Telegram | Daily ping with per-lead buttons. See Decisions for the spec. |
-| Sources | Ashby, Greenhouse, Lever, X | Scanned daily. X uses Mina's five query buckets. |
+| Sources | Ashby, Greenhouse, Lever (built); X (planned, #16) | Six boards scanned daily. The X spike found mostly job-feed reposts; the most useful X query finds posts linking to job-board postings. |
 | Starting companies | n8n, PostHog, Ramp (Ashby); Instacart (Greenhouse); Palantir, Spotify (Lever) | Checked 2026-09-29: board names resolve and return jobs. |
 | Comp floor | $180K base | |
 | Scoring and writing | Jev scores, code weights, Claude writes | Hybrid (decided 2026-09-30). Claude uses the Anthropic node, including Web Search for people. |
