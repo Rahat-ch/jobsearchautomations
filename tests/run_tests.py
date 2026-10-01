@@ -4,7 +4,8 @@
 Each case clears the jobscout_test_ tables, runs the "Daily scan" trigger with
 pinned data (fixture board response, test config, fake Telegram replies), and then
 checks only external behavior: rows in the test tables and the items that reached
-the Telegram send nodes.
+the Telegram send nodes. The pinned config starts from the defaults in the workflow's
+"Job Scout config" node, so the filter cases test the shipped rules.
 
   python3 tests/run_tests.py            # all cases
   python3 tests/run_tests.py cap        # cases whose name contains "cap"
@@ -14,7 +15,9 @@ Stdlib only. Needs the local n8n and N8N_API_KEY + N8N_MCP_TOKEN in .env.
 import json
 import os
 import sys
+import time
 import traceback
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -31,6 +34,9 @@ LEADS_TABLE = TEST_PREFIX + "leads"
 FAKE_CHAT_ID = "000000000"
 FIXTURE = json.loads((ROOT / "tests/fixtures/ashby-n8n.json").read_text())
 BOARD = "n8n"
+# Synthetic Ashby-shaped postings, one or two per filter rule and edge case.
+FILTER_FIXTURE = json.loads((ROOT / "tests/fixtures/ashby-filters.json").read_text())
+FILTER_BOARD = "testco"
 
 # Nodes that reach the outside world. test_workflow does not pin anything by
 # itself, so every one of these must be pinned or the test would really call it.
@@ -53,7 +59,14 @@ def api(method, path, query=None):
 
 
 def mcp(tool, args):
-    return n8n_mcp.call(tool, args)
+    # The MCP server rate-limits bursts of calls (HTTP 429); wait and retry.
+    for attempt in range(6):
+        try:
+            return n8n_mcp.call(tool, args)
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 5:
+                raise
+            time.sleep(10 * (attempt + 1))
 
 
 def find_workflow():
@@ -95,13 +108,26 @@ def lead_rows():
 
 # ---------- running the scan ----------
 
-def run_scan(workflow, daily_cap=10):
+def config_defaults(workflow):
+    """The config node's values. List and object fields are JSON inside ={{ }}."""
+    node = next(n for n in workflow["nodes"] if n["name"] == "Job Scout config")
+    out = {}
+    for a in node["parameters"]["assignments"]["assignments"]:
+        v = a["value"]
+        if isinstance(v, str) and v.startswith("={{") and v.endswith("}}"):
+            v = json.loads(v[3:-2])
+        out[a["name"]] = v
+    return out
+
+
+def run_scan(workflow, daily_cap=10, board=BOARD, fixture=FIXTURE, **config):
+    cfg = config_defaults(workflow)
+    cfg.update({"ashbyBoards": [board], "telegramChatId": FAKE_CHAT_ID,
+                "dailyCap": daily_cap, "tablePrefix": TEST_PREFIX}, **config)
     pin = {
         TRIGGER: [{"json": {}}],
-        "Job Scout config": [{"json": {
-            "ashbyBoards": [BOARD], "telegramChatId": FAKE_CHAT_ID,
-            "dailyCap": daily_cap, "tablePrefix": TEST_PREFIX}}],
-        "Fetch Ashby board": [{"json": FIXTURE}],
+        "Job Scout config": [{"json": cfg}],
+        "Fetch Ashby board": [{"json": fixture}],
         HEADER_NODE: [{"json": {"ok": True, "result": {"message_id": 1}}}],
         LEAD_NODE: [{"json": {"ok": True, "result": {"message_id": 2}}}],
     }
@@ -135,11 +161,47 @@ def sent(run_data):
     return items_reaching(run_data, HEADER_NODE), items_reaching(run_data, LEAD_NODE)
 
 
-# ---------- expectations from the fixture ----------
+# ---------- expectations from the fixtures ----------
 
 JOBS = [j for j in FIXTURE["jobs"] if j.get("isListed", True)]
 KEY = {f"ashby:{BOARD}:{j['id']}": j for j in JOBS}
-NEWEST_FIRST = sorted(KEY, key=lambda k: KEY[k]["publishedAt"], reverse=True)
+
+# What the default rules should decide for each posting, by title.
+EXPECTED = {
+    # n8n fixture (real postings)
+    "Senior Developer Advocate, US": "passed",  # department is Marketing
+    "Field Marketing Lead, US": "passed",
+    "Enterprise Sales Development Representative US (Hybrid)": "location",  # hybrid in Boston
+    "Forward Deployed Engineer - US East Coast": "passed",
+    "Senior Partner Manager SI, West Coast": "passed",  # base tops out at $211,750
+    "Senior FP&A Manager - Marketing": "location",  # remote in Europe only
+    # synthetic fixture
+    "Product Engineer": "location",  # hybrid in London
+    "Senior Frontend Engineer": "pay_floor",  # base $140K-$170K; commission is ignored
+    "Senior Corporate Paralegal": "excluded_title",
+    "HR Business Partner": "excluded_title",  # Dallas hybrid passes location, title fails
+    "Developer Experience Engineer": "passed",  # no pay stated
+    "Solutions Engineer": "passed",  # no location stated
+    "Software Engineer, Frontend": "passed",  # hybrid NYC, "Remote (US)" only as a secondary location
+    "Product Engineer, Platform": "location",  # Remote (Canada)
+    "Forward Deployed Engineer, Europe": "location",  # "Remote - Europe", no address
+    "Senior Product Engineer": "passed",  # hybrid in Plano, TX
+    "Forward Deployed Engineer": "location",  # hybrid in Austin
+    "Developer Relations Engineer, SDKs & APIs": "passed",
+    "Fintech Product Engineer": "passed",
+    "Developer Advocate": "passed",  # department is Marketing
+    "Product Manager, Developer Platform": "passed",  # base tops out exactly at the floor
+    "Solutions Architect": "passed",  # pay only in EUR: unknown
+    "Software Engineer Intern": "pay_floor",  # $12.5K a month = $150K a year
+    "Partner Engineer": "location",  # Arlington, VA is not Arlington, TX
+}
+PASSED = [k for k in KEY if EXPECTED[KEY[k]["title"]] == "passed"]
+NEWEST_FIRST = sorted(PASSED, key=lambda k: KEY[k]["publishedAt"], reverse=True)
+
+FJOBS = FILTER_FIXTURE["jobs"]
+FKEY = {f"ashby:{FILTER_BOARD}:{j['id']}": j for j in FJOBS}
+FBY_TITLE = {j["title"]: f"ashby:{FILTER_BOARD}:{j['id']}" for j in FJOBS}
+FPASSED = {k for k, j in FKEY.items() if EXPECTED[j["title"]] == "passed"}
 
 
 def same_instant(a, b):
@@ -182,6 +244,7 @@ def case_one_lead_per_posting(wf):
         assert r["posting_url"] == job["jobUrl"] and r["apply_url"] == job["applyUrl"]
         assert same_instant(r["published_at"], job["publishedAt"])
         assert r["status"] == "new" and r["first_seen_at"], r
+        assert r["filter_result"] == EXPECTED[job["title"]], (job["title"], r["filter_result"])
 
 
 def case_daily_ping_shape(wf):
@@ -189,12 +252,10 @@ def case_daily_ping_shape(wf):
     run_data = run_scan(wf, daily_cap=10)
     header, leads = sent(run_data)
     rows = {r["lead_key"]: r for r in lead_rows()}
-    check_header(header, len(JOBS))
+    check_header(header, len(PASSED))
     assert [m["lead_key"] for m in leads] == NEWEST_FIRST, "leads not newest first"
     check_lead_messages(leads, rows)
-    fpa = [m for m in leads if "FP&A" in KEY[m["lead_key"]]["title"]]
-    assert fpa and "FP&amp;A" in fpa[0]["text"], "HTML special characters not escaped"
-    assert all(r["sent_at"] for r in rows.values()), "sent leads have no sent_at"
+    assert all(rows[k]["sent_at"] for k in PASSED), "sent leads have no sent_at"
 
 
 def case_rescan_creates_no_duplicates_and_sends_nothing(wf):
@@ -214,8 +275,8 @@ def case_rescan_creates_no_duplicates_and_sends_nothing(wf):
 
 
 def case_cap_and_carry_over(wf):
-    cap = 4
-    assert len(JOBS) > cap, "fixture must exceed the cap"
+    cap = 3
+    assert len(PASSED) > cap, "fixture must exceed the cap"
     reset_test_tables()
 
     header, leads = sent(run_scan(wf, daily_cap=cap))
@@ -231,7 +292,7 @@ def case_cap_and_carry_over(wf):
     check_header(header, len(rest))
     assert [m["lead_key"] for m in leads] == rest, "leads over the cap weren't sent next"
     assert not first_ping & {m["lead_key"] for m in leads}, "a lead was sent twice"
-    assert all(r["sent_at"] for r in lead_rows())
+    assert sorted(r["lead_key"] for r in lead_rows() if r["sent_at"]) == sorted(PASSED)
 
     header, leads = sent(run_scan(wf, daily_cap=cap))
     assert header == [] and leads == [], "third scan sent messages"
@@ -253,12 +314,116 @@ def case_telegram_nodes_send_what_they_receive(wf):
     assert button["additionalFields"]["url"] == "={{ $json.button_url }}"
 
 
+# ---------- hard filters ----------
+
+_filter_scan = {}
+
+
+def filter_scan(wf):
+    """One scan of the synthetic fixture, shared by the filter cases that only read it."""
+    if not _filter_scan:
+        reset_test_tables()
+        run_data = run_scan(wf, daily_cap=50, board=FILTER_BOARD, fixture=FILTER_FIXTURE)
+        _filter_scan["rows"] = {r["lead_key"]: r for r in lead_rows()}
+        _filter_scan["sent"] = sent(run_data)
+    return _filter_scan["rows"], _filter_scan["sent"]
+
+
+def case_filters_store_the_failed_rule(wf):
+    rows, _ = filter_scan(wf)
+    assert sorted(rows) == sorted(FKEY), "filtered postings must still be saved as leads"
+    wrong = {FKEY[k]["title"]: r["filter_result"] for k, r in rows.items()
+             if r["filter_result"] != EXPECTED[FKEY[k]["title"]]}
+    assert not wrong, f"wrong filter_result: {wrong}"
+    basis = lambda t: rows[FBY_TITLE[t]]["location_basis"]
+    assert basis("Software Engineer, Frontend") == "us_remote"
+    assert basis("Senior Product Engineer") == "metro"
+    assert basis("Solutions Engineer") == "unclear"
+    pay = lambda t: (rows[FBY_TITLE[t]]["pay_min"], rows[FBY_TITLE[t]]["pay_max"])
+    assert pay("Software Engineer, Frontend") == (143200, 284000)
+    assert pay("Senior Frontend Engineer") == (140000, 170000), "commission counted as base pay"
+    assert pay("Software Engineer Intern") == (150000, 150000), "monthly pay not made yearly"
+    assert pay("Solutions Architect") == (None, None), "EUR pay must stay unknown"
+    assert pay("Developer Experience Engineer") == (None, None)
+
+
+def case_filtered_leads_never_reach_telegram(wf):
+    rows, (header, leads) = filter_scan(wf)
+    sent_keys = [m["lead_key"] for m in leads]
+    assert sorted(sent_keys) == sorted(FPASSED), (
+        f"sent {sorted(FKEY[k]['title'] for k in sent_keys)}")
+    check_header(header, len(FPASSED))
+    for k, r in rows.items():
+        if r["filter_result"] != "passed":
+            assert not r["sent_at"], f"filtered lead has sent_at: {FKEY[k]['title']}"
+
+
+def case_messages_show_pay_and_location(wf):
+    _, (_, leads) = filter_scan(wf)
+    text = {FKEY[m["lead_key"]]["title"]: m["text"] for m in leads}
+    assert "Pay: Pay not listed" in text["Developer Experience Engineer"]
+    assert "Location: Location unclear" in text["Solutions Engineer"]
+    ramp_style = text["Software Engineer, Frontend"]
+    assert "Pay: $143.2K – $284K • Offers Equity" in ramp_style, ramp_style
+    assert "Location: New York, NY (HQ) · Hybrid · Remote (US) option" in ramp_style, ramp_style
+    assert "Location: Plano, TX · Hybrid" in text["Senior Product Engineer"]
+    assert "Pay: €91.4K – €171.7K" in text["Solutions Architect"], "non-USD pay text not shown"
+    assert "SDKs &amp; APIs" in text["Developer Relations Engineer, SDKs & APIs"], "HTML not escaped"
+
+
+def case_rule_changes_apply_to_saved_leads(wf):
+    # A lead filtered under one config passes after the rule changes, and is sent then.
+    reset_test_tables()
+    pm = FBY_TITLE["Product Manager, Developer Platform"]  # base $150K-$180K
+    header, leads = sent(run_scan(wf, daily_cap=50, board=FILTER_BOARD, fixture=FILTER_FIXTURE,
+                                  payFloor=200000))
+    rows = {r["lead_key"]: r for r in lead_rows()}
+    assert rows[pm]["filter_result"] == "pay_floor" and not rows[pm]["sent_at"]
+    assert pm not in {m["lead_key"] for m in leads}
+
+    header, leads = sent(run_scan(wf, daily_cap=50, board=FILTER_BOARD, fixture=FILTER_FIXTURE))
+    rows = {r["lead_key"]: r for r in lead_rows()}
+    assert rows[pm]["filter_result"] == "passed", rows[pm]["filter_result"]
+    assert [m["lead_key"] for m in leads] == [pm], "only the newly passing lead should be sent"
+    assert rows[pm]["sent_at"]
+
+
+def case_config_defaults_match_spec(wf):
+    cfg = config_defaults(wf)
+    assert cfg["payFloor"] == 180000
+    excluded = [t.lower() for t in cfg["excludedTitles"]]
+    assert excluded == ["accountant", "finance", "legal", "counsel", "paralegal", "hr", "people ops",
+                        "people operations", "office manager", "facilities", "executive assistant"], excluded
+    assert "marketing" not in excluded, "DevRel roles often sit in Marketing"
+    rules = cfg["locationRules"]
+    assert rules["usRemote"] is True
+    (dfw,) = rules["metros"]
+    for city in ["Dallas", "Fort Worth", "DFW", "Frisco", "Plano", "Irving", "Arlington", "Richardson",
+                 "Addison", "McKinney", "Allen", "Carrollton", "Grapevine", "Southlake", "Denton",
+                 "Garland", "Lewisville", "Coppell"]:
+        assert city in dfw["cities"], city
+    assert "Austin" not in dfw["cities"]
+    assert [f["name"] for f in cfg["roleFamilies"]] == [
+        "DevEx/Product PM", "FDE/Solutions", "Product/Frontend Engineering", "DevRel/DevEx"]
+    assert all(f["titleKeywords"] for f in cfg["roleFamilies"])
+    note = next(n["parameters"]["content"] for n in wf["nodes"]
+                if n["type"] == "n8n-nodes-base.stickyNote"
+                and n["parameters"]["content"].startswith("## Job Scout config"))
+    for field in cfg:
+        assert f"**{field}**" in note, f"config sticky note doesn't explain {field}"
+
+
 CASES = [
     case_telegram_nodes_send_what_they_receive,
     case_one_lead_per_posting,
     case_daily_ping_shape,
     case_rescan_creates_no_duplicates_and_sends_nothing,
     case_cap_and_carry_over,
+    case_config_defaults_match_spec,
+    case_filters_store_the_failed_rule,
+    case_filtered_leads_never_reach_telegram,
+    case_messages_show_pay_and_location,
+    case_rule_changes_apply_to_saved_leads,
 ]
 
 

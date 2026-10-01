@@ -200,6 +200,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 **Lead lifecycle** (decided in grilling, 2026-09-30; terms in `CONTEXT.md`)
 - **Identity:** a lead is keyed by board + ATS job ID. A hiring post that links to a posting merges into that lead, with X added as a source. A hiring post with no posting link becomes an X-only lead, keyed by the post, if Jev judges it a real opening.
 - **Filters first:** postings that fail location, pay floor or title exclusions are stored as Filtered with the reason, and never sent. No stated pay passes the pay floor and shows as "Pay not listed".
+- **Excluded titles** (decided 2026-09-30): the default list is non-engineering operations titles only (accountant, finance, legal, counsel, paralegal, HR, people ops, office manager, facilities, executive assistant), matched on whole words in the title. The department and team fields are never used, because DevRel and Developer Advocate roles often sit in Marketing.
 - **Unknown location:** an X-only lead with no stated location passes the location filter and shows as "Location unclear". Only a clearly wrong location filters it out.
 - **Boards outside the config:** an X post that links to a posting at a company not in the board list still becomes a lead. The board list changes only when Rahat edits the config.
 - **Scoring failures:** retry. If scoring still fails, the lead is saved Unscored and scored on the next scan. The header reports how many couldn't be scored.
