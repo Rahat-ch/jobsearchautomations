@@ -21,6 +21,7 @@ Resilience (issue #10):
 - A Jev failure leaves a lead unscored and unsent, the header counts it ("· 2 couldn't be scored (retrying next scan)"), a request that fails once and then succeeds is scored and sent in the same scan, and the next scan judges only the unscored leads again. Every other case checks the exact header text, so the note never appears when nothing failed.
 - A failed fit line still sends the lead, without the fit line.
 - A scan with nothing to send produces one silent "Job Scout: no new leads today" message with the scanned, filtered and unscored counts: when every posting is filtered, when nothing reaches the minimum (a salary found in the description below the floor counts as filtered), and when Jev fails for a lead. The quiet scans in other cases check it too.
+- Every Telegram node (**Send header**, which also sends the empty-day message, **Send lead message** and **Send crash alert**) has Retry On Fail with at least 3 tries (issue #24), so one dropped connection doesn't stop the ping or the alert. Pinned nodes don't retry, so this is a node-settings check.
 - When every board's fetch fails, the scan stops at **Normalize postings** with "No board could be fetched".
 - The crash alert path runs from its Error Trigger (**Scan crashed**) with pinned error data in the shape n8n produced for a real failed scan, and the case checks the alert text, HTML escaping, the step name, and that **Send crash alert** reads the chat ID from the config node.
 

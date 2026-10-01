@@ -262,12 +262,14 @@ The Hermes board design may become the UI later. The proof of concept has no fro
   - So Job Scout has an Error Trigger (**Scan crashed**) → **Build crash alert** → **Send crash alert**. Nothing has to be set after a template import. The alert reads the chat ID from the config node's parameters (`$('Job Scout config').params`), which works without that node running, so `telegramChatId` must stay a plain value.
   - Text: "Job Scout scan failed at <step>: <error>" plus a link to the failed execution. A Code node's error carries no node name, so the step comes from `execution.lastNodeExecuted`, which is the node that failed.
   - Checked once for real on 2026-10-01: a published copy with a broken Board list node, run in production mode through MCP, failed (execution mode `trigger`), n8n ran its own Error Trigger (mode `error`), and Telegram returned `ok: true` for a "[Test]" alert. The copy was deleted.
+- **Telegram sends retry** (issue #24, 2026-10-01): a manual scan failed at **Send header** with "The connection to the server was closed unexpectedly", and Telegram answered again seconds later. **Send header** (which also sends the empty-day message) and **Send lead message** retry 3 times, 3 s apart; **Send crash alert** retries 3 times, 5 s apart.
 - X data is stored as IDs, handles and links only.
 - **MCP "set lead status"** can also move a lead back to New, as the undo path.
 
 **Build shape** (ADR 0005)
 - An n8n gallery template is one workflow JSON, so Job Scout is one workflow with several triggers.
 - Importing a template drops workflow settings. The crash alert doesn't need one: the workflow's own Error Trigger runs when no error workflow is set (issue #10). A sticky note says so.
+- **Editing the published workflow** (checked in n8n 2.41.3 source for issue #24): MCP `update_workflow` saves a new draft version only. `WorkflowService.update()` publishes on save only when called with `publishIfActive`, which the MCP tool doesn't pass, so `versionId` moves and `activeVersionId` stays. The schedule and the webhooks keep running the active version until `publish_workflow` makes the draft active. `test_workflow` runs the draft. One exception: a change to workflow settings re-activates the current active version (still the old nodes).
 
 **Docs for ticket work**
 - `CONTEXT.md`: the glossary (lead, posting, board, hiring post, pass, fit score, and so on).

@@ -507,7 +507,10 @@
           "id": "dNZCpYwwJdLFeymL",
           "name": "Job Scout bot"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "id": "51cc211b-1646-42ac-9801-915681d4b7d9",

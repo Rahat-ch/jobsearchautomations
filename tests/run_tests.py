@@ -870,6 +870,17 @@ def case_telegram_nodes_send_what_they_receive(wf):
                     ("Pass", "={{ $json.pass_url }}")]], got
 
 
+def case_every_telegram_send_retries(wf):
+    # A network blip on one send (Send header failed this way on 2026-10-01) must not
+    # stop the ping or the crash alert: every Telegram node retries at least 3 times.
+    sends = [n for n in wf["nodes"] if n["type"] == "n8n-nodes-base.telegram"]
+    assert {HEADER_NODE, LEAD_NODE, CRASH_NODE} <= {n["name"] for n in sends}, [n["name"] for n in sends]
+    for n in sends:
+        assert n.get("retryOnFail") is True, f"{n['name']}: Retry On Fail is off"
+        assert n.get("maxTries", 3) >= 3, f"{n['name']}: maxTries {n.get('maxTries')}"
+        assert n.get("waitBetweenTries", 1000) >= 1000, f"{n['name']}: waitBetweenTries {n.get('waitBetweenTries')}"
+
+
 def case_jev_and_claude_nodes_call_what_they_receive(wf):
     # The same check for the pinned Jev and Claude nodes: Jev gets the request body
     # built for each lead, with the TypeSafe Bearer credential, retries and a failed
@@ -1853,6 +1864,7 @@ def case_passed_lead_is_never_sent(wf):
 
 CASES = [
     case_telegram_nodes_send_what_they_receive,
+    case_every_telegram_send_retries,
     case_jev_and_claude_nodes_call_what_they_receive,
     case_config_defaults_match_spec,
     case_one_lead_per_posting,
