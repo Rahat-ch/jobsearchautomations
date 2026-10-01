@@ -21,6 +21,7 @@ import hmac
 import json
 import math
 import os
+import re
 import sys
 import time
 import traceback
@@ -42,6 +43,7 @@ TEST_PREFIX = "jobscout_test_"
 LEADS_TABLE = TEST_PREFIX + "leads"
 STATE_TABLE = TEST_PREFIX + "state"
 REFERRALS_TABLE = TEST_PREFIX + "referrals"
+PASSES_TABLE = TEST_PREFIX + "passes"
 FAKE_CHAT_ID = "000000000"
 FIXTURES = ROOT / "tests/fixtures"
 FIXTURE = json.loads((FIXTURES / "ashby-n8n.json").read_text())
@@ -78,9 +80,10 @@ CRASH_TRIGGER = "Scan crashed"
 CRASH_NODE = "Send crash alert"
 APPLIED_TRIGGER = "Applied link"
 REFERRAL_TRIGGER = "Referral link"
+PASS_TRIGGER = "Pass form"
 PAGE_NODE = "Build page"
 RESPOND_NODE = "Show page"
-SIGNED_NODES = ("Build lead messages", "Check Applied link", "Check Referral link")
+SIGNED_NODES = ("Build lead messages", "Check Applied link", "Check Referral link", "Check Pass form")
 
 ENV = n8n_mcp.load_env()
 
@@ -132,7 +135,7 @@ def find_table(name):
 def reset_test_tables():
     # Clearing the state table also drops the signing secret, so each case's first run
     # makes a new one.
-    for name in (LEADS_TABLE, STATE_TABLE, REFERRALS_TABLE):
+    for name in (LEADS_TABLE, STATE_TABLE, REFERRALS_TABLE, PASSES_TABLE):
         table = find_table(name)
         if table is None:
             continue  # the workflow creates it on its first run
@@ -598,22 +601,28 @@ def public_base():
     return base if base.endswith("/") else base + "/"
 
 
-def link_query(url):
+def link_query(url, prefix="webhook/job-scout/"):
     """The query of an action link, after checking (without printing it) that it points at
-    the production webhook on the public base."""
+    the production webhook (or, for Pass, the production form) on the public base."""
     parts = urllib.parse.urlsplit(url)
-    assert url.startswith(public_base() + "webhook/job-scout/"), "action link isn't on the public webhook base"
-    query = urllib.parse.parse_qs(parts.query)
+    assert url.startswith(public_base() + prefix), f"action link isn't under {prefix} on the public base"
+    query = urllib.parse.parse_qs(parts.query, keep_blank_values=True)
     return parts.path.rsplit("/", 1)[1], {k: v[0] for k, v in query.items()}
 
 
 def run_action(wf, trigger, query, **config):
     """Opens an action link: runs its webhook trigger with a pinned GET request. Returns the
     page (status, heading, lines, html) and the run data."""
+    return run_trigger(wf, trigger, {"headers": {"user-agent": "Mozilla/5.0 (iPhone)"}, "params": {}, "query": query,
+                                     "body": {}}, **config)
+
+
+def run_trigger(wf, trigger, item, **config):
+    """Runs the workflow from an action trigger pinned to one item; returns the page and the
+    run data."""
     pin, _, _ = scan_pins(wf, **config)
     del pin[TRIGGER]
-    pin[trigger] = [{"json": {"headers": {"user-agent": "Mozilla/5.0 (iPhone)"}, "params": {}, "query": query,
-                              "body": {}}}]
+    pin[trigger] = [{"json": item}]
     status, execution, run_data = run_pinned(wf, pin, trigger=trigger)
     assert status == "success", f"{trigger} failed: {execution['data']['resultData'].get('error')}"
     assert TRIGGER not in run_data, "the daily scan ran from an action link"
@@ -629,6 +638,37 @@ def tap(wf, action, key, sig=None, **config):
     trigger = APPLIED_TRIGGER if action == "applied" else REFERRAL_TRIGGER
     query = {"lead": key, "sig": sign(action, key) if sig is None else sig}
     return run_action(wf, trigger, {k: v for k, v in query.items() if v is not False}, **config)
+
+
+# The ten pass reasons from the Hermes feedback-loop spec, section 1: (code, label).
+REASONS = [("comp_below_range", "Comp below range"), ("seniority_mismatch", "Wrong seniority"),
+           ("role_family_off", "Not my role family"), ("location_not_real", "Remote claim is soft"),
+           ("company_stage_off", "Company stage off"), ("tech_stack_off", "Stack mismatch"),
+           ("already_applied", "Already applied"), ("no_interest", "Not interested"),
+           ("listing_looks_wrong", "Listing looks wrong"), ("stale_repost", "Stale repost")]
+REASON_FIELD = "Reason"
+NOTE_FIELD = "Anything else? (optional)"
+NOTE_PLACEHOLDER = "What I would want to know before surfacing something like this again."
+
+
+def pass_form_item(query, reason, note=""):
+    """What Pass form outputs for one submission, in the shape n8n 2.41.3 produced for a real
+    one (issue #13): the hidden fields by name, prefilled from the link's query, the other
+    fields by label (a reason the form didn't get is null), and the link's query."""
+    return {"lead": query.get("lead", ""), "sig": query.get("sig", ""), REASON_FIELD: reason, NOTE_FIELD: note,
+            "submittedAt": datetime.now(timezone.utc).isoformat(), "formMode": "production",
+            "formQueryParameters": query}
+
+
+def submit_pass(wf, key, reason="Stack mismatch", note="", sig=None, **config):
+    """Submits the Pass form for a lead, from a link signed as Job Scout signs it unless `sig`
+    is given."""
+    query = {"lead": key, "sig": sign("pass", key) if sig is None else sig, "title": "", "company": ""}
+    return run_trigger(wf, PASS_TRIGGER, pass_form_item(query, reason, note), **config)
+
+
+def passes_rows():
+    return table_rows(PASSES_TABLE)
 
 
 def check_page(page, status, heading):
@@ -653,6 +693,12 @@ def check_lead_messages(leads, rows_by_key):
             path, query = link_query(msg[f"{action}_url"])
             assert path == action and query == {"lead": key, "sig": sign(action, key, secret)}, \
                 f"{action} link for {key} has the wrong path, lead or signature"
+        # Pass: the form, with the lead key and signature for its hidden fields, and the
+        # title and company to show on it.
+        row = rows_by_key[key]
+        path, query = link_query(msg["pass_url"], "form/job-scout/")
+        assert path == "pass" and query == {"lead": key, "sig": sign("pass", key, secret), "title": row["title"],
+                                            "company": row["company"]}, f"pass link for {key} is wrong"
         assert secret not in json.dumps(msg), "the signing secret is in a lead message"
 
 
@@ -782,11 +828,12 @@ def case_telegram_nodes_send_what_they_receive(wf):
         assert extra.get("parse_mode") == "HTML", f"{name}: parse mode not HTML"
         assert extra.get("appendAttribution") is False, f"{name}: attribution not off"
         assert extra.get("disable_notification") == "={{ $json.silent }}", name
-    # Row 1: Open posting. Row 2: Applied and Referral, as URL buttons to the signed links.
+    # Row 1: Open posting. Row 2: Applied, Referral and Pass, as URL buttons to the signed links.
     rows = [r["row"]["buttons"] for r in nodes[LEAD_NODE]["parameters"]["inlineKeyboard"]["rows"]]
     got = [[(b["text"], b["additionalFields"]["url"]) for b in row] for row in rows]
     assert got == [[("={{ $json.button_text }}", "={{ $json.button_url }}")],
-                   [("Applied", "={{ $json.applied_url }}"), ("Referral", "={{ $json.referral_url }}")]], got
+                   [("Applied", "={{ $json.applied_url }}"), ("Referral", "={{ $json.referral_url }}"),
+                    ("Pass", "={{ $json.pass_url }}")]], got
 
 
 def case_jev_and_claude_nodes_call_what_they_receive(wf):
@@ -1601,6 +1648,141 @@ def case_referral_raises_company_fit_and_flags_messages(wf):
         assert ("· referral 5" in m["text"]) == has, m["text"]
 
 
+# ---------- Pass form ----------
+
+def case_pass_form_offers_the_ten_reasons(wf):
+    # Pinned triggers don't check their own parameters, so check the form here: a fixed
+    # path, the lead key and signature in hidden fields (prefilled from the link's query),
+    # a required choice of the ten reason labels, an optional note with the Hermes
+    # placeholder, Ignore Bots on, and the answer through Show page. Version 2.1 is the
+    # latest that allows a Respond to Webhook node after the form, and every trigger here
+    # leads to Show page. The Code node maps each label to its code.
+    nodes = {n["name"]: n for n in wf["nodes"]}
+    form = nodes[PASS_TRIGGER]
+    p = form["parameters"]
+    assert (form["type"], form["typeVersion"]) == ("n8n-nodes-base.formTrigger", 2.1), (form["type"], form["typeVersion"])
+    assert (p["path"], p["responseMode"]) == ("job-scout/pass", "responseNode"), (p["path"], p["responseMode"])
+    assert p.get("authentication", "none") == "none", "the signature is the auth"
+    assert p["options"].get("ignoreBots") is True, "Ignore Bots is off"
+    assert p["options"].get("appendAttribution") is False, "n8n attribution is on"
+    assert p["formTitle"] == "Pass on this lead"
+    assert "$json.query" in p["formDescription"], "the form doesn't show the lead from the link"
+    fields = p["formFields"]["values"]
+    assert [(f["fieldType"], f.get("fieldName")) for f in fields[:2]] == [("hiddenField", "lead"), ("hiddenField", "sig")]
+    assert not any(f.get("fieldValue") or f.get("fieldLabel") for f in fields[:2]), "hidden fields must come from the query"
+    reason, note = fields[2], fields[3]
+    assert (reason["fieldLabel"], reason["fieldType"], reason.get("requiredField")) == (REASON_FIELD, "dropdown", True)
+    assert [o["option"] for o in reason["fieldOptions"]["values"]] == [label for _, label in REASONS]
+    assert not reason.get("multiselect"), "one reason per pass"
+    assert (note["fieldLabel"], note["fieldType"], note.get("placeholder")) == (NOTE_FIELD, "textarea", NOTE_PLACEHOLDER)
+    assert not note.get("requiredField"), "the note must be optional"
+    code = nodes["Check Pass form"]["parameters"]["jsCode"]
+    table = dict(re.findall(r"^  '([^']+)': '([a-z_]+)',$", code[code.index("const REASONS"):], re.M))
+    assert table == {label: c for c, label in REASONS}, table
+    rules = nodes["Route by trigger"]["parameters"]["rules"]["values"]
+    assert [r["outputKey"] for r in rules] == ["Daily scan", "Applied", "Referral", "Pass"]
+    assert "$('Pass form').isExecuted" in rules[3]["conditions"]["conditions"][0]["leftValue"]
+
+
+def case_pass_from_lead_message_sets_passed_and_logs_reason(wf):
+    # The Pass link in a lead message, submitted with a reason and a note: the lead becomes
+    # Passed with the date, and one passes row holds the code, the note and the date. A
+    # second submit keeps the status and date and replaces the reason and note in that row.
+    reset_test_tables()
+    leads = sent(run_scan(wf, judged=PASSED))[1]
+    check_lead_messages(leads, rows_by_key())
+    key = leads[0]["lead_key"]
+    _, query = link_query(leads[0]["pass_url"], "form/job-scout/")
+    before = time.time()
+    page, run_data = run_trigger(wf, PASS_TRIGGER, pass_form_item(query, "Stack mismatch", "Mostly Go."))
+    assert TRIGGER not in run_data and not ran(run_data, "Generate signing secret")
+    check_page(page, 200, "Passed")
+    title = html_escape(ALL_KEYS[key]["title"], quote=False)
+    assert page["lines"] == [f"<b>{title}</b> at {BOARD}", "Reason logged: Stack mismatch.",
+                             "Job Scout won't send this lead again."], page["lines"]
+    rows = rows_by_key()
+    assert rows[key]["status"] == "passed", rows[key]["status"]
+    assert parse_time(rows[key]["passed_at"]).timestamp() >= before - 5, rows[key]["passed_at"]
+    assert all(r["status"] == "new" and not r["passed_at"] for k, r in rows.items() if k != key)
+    passes = passes_rows()
+    assert [(r["lead_key"], r["reason_code"], r["note"]) for r in passes] == [(key, "tech_stack_off", "Mostly Go.")]
+    assert same_instant(passes[0]["passed_at"], rows[key]["passed_at"])
+    # A second submit: one status, one row, the new reason, the first date.
+    page, run_data = run_trigger(wf, PASS_TRIGGER, pass_form_item(query, "Not interested", ""))
+    check_page(page, 200, "Already passed")
+    assert "Reason updated: Not interested." in page["lines"], page["lines"]
+    assert not ran(run_data, "Mark passed"), "a second submit wrote to the lead"
+    assert rows_by_key()[key] == rows[key], "a second submit changed the lead"
+    again = passes_rows()
+    assert [(r["lead_key"], r["reason_code"], r["note"]) for r in again] == [(key, "no_interest", "")], again
+    assert same_instant(again[0]["passed_at"], passes[0]["passed_at"]), "a second submit moved the pass date"
+
+
+def case_pass_needs_a_reason(wf):
+    # The form requires a reason, and the workflow checks again: no reason, or one that
+    # isn't one of the ten labels (such as a code from the Hermes seed data the spec
+    # dropped), gets "Pick a reason" (400) and changes nothing.
+    reset_test_tables()
+    run_scan(wf, judged=PASSED, minFitScore=101)
+    key = PASSED[0]
+    before = sorted(lead_rows(), key=lambda r: r["id"])
+    for reason in (None, "role_too_backend"):
+        page, run_data = submit_pass(wf, key, reason=reason, note="No reason given")
+        check_page(page, 400, "Pick a reason")
+        assert not ran(run_data, "Save pass reason") and not ran(run_data, "Mark passed"), reason
+    assert sorted(lead_rows(), key=lambda r: r["id"]) == before, "a pass without a reason changed a lead"
+    assert passes_rows() == [], "a pass without a reason was saved"
+
+
+def case_bad_pass_signature_changes_nothing(wf):
+    # A wrong, borrowed or missing signature gets "Invalid link" (403) before anything is
+    # read or written; a valid signature for a lead that doesn't exist gets 404.
+    reset_test_tables()
+    run_scan(wf, judged=PASSED, minFitScore=101)
+    key, other = PASSED[0], PASSED[1]
+    good = sign("pass", key)
+    before = sorted(lead_rows(), key=lambda r: r["id"])
+    for sig in (good[:-1] + ("0" if good[-1] != "0" else "1"), sign("applied", key), sign("pass", other), ""):
+        page, run_data = submit_pass(wf, key, sig=sig)
+        check_page(page, 403, "Invalid link")
+        assert not ran(run_data, "Save pass reason") and not ran(run_data, "Mark passed")
+    assert sorted(lead_rows(), key=lambda r: r["id"]) == before, "a bad signature changed a lead"
+    assert passes_rows() == [], "a bad signature saved a pass"
+    page, _ = submit_pass(wf, f"ashby:{BOARD}:no-such-posting")
+    check_page(page, 404, "Lead not found")
+
+
+def case_pass_from_picked_but_not_applied(wf):
+    reset_test_tables()
+    run_scan(wf, judged=PASSED, minFitScore=101)
+    picked, applied = PASSED[0], PASSED[1]
+    update_lead(picked, {"status": "picked"})
+    page, _ = submit_pass(wf, picked, reason="Wrong seniority")
+    check_page(page, 200, "Passed")
+    row = rows_by_key()[picked]
+    assert row["status"] == "passed" and row["passed_at"], row["status"]
+    update_lead(applied, {"status": "applied"})
+    page, run_data = submit_pass(wf, applied, reason="Not interested")
+    check_page(page, 409, "Not changed")
+    assert not ran(run_data, "Save pass reason") and not ran(run_data, "Mark passed")
+    row = rows_by_key()[applied]
+    assert row["status"] == "applied" and not row["passed_at"], row["status"]
+    assert [r["lead_key"] for r in passes_rows()] == [picked]
+
+
+def case_passed_lead_is_never_sent(wf):
+    reset_test_tables()
+    order = fit_order(FPASSED)
+    run_data = run_scan(wf, daily_cap=2, board=FILTER_BOARD, fixture=FILTER_FIXTURE, judged=FPASSED)
+    check_sent_order(sent(run_data)[1], order[:2])
+    submit_pass(wf, order[2], reason="Company stage off")  # New and not sent yet: it would have been next
+    header, leads = sent(run_scan(wf, daily_cap=2, board=FILTER_BOARD, fixture=FILTER_FIXTURE))
+    check_header(header, 2)
+    check_sent_order(leads, order[3:5])
+    row = rows_by_key()[order[2]]
+    assert row["status"] == "passed" and not row["sent_at"], row["status"]
+
+
 CASES = [
     case_telegram_nodes_send_what_they_receive,
     case_jev_and_claude_nodes_call_what_they_receive,
@@ -1638,6 +1820,12 @@ CASES = [
     case_tampered_link_changes_nothing,
     case_applied_lead_is_never_sent,
     case_referral_raises_company_fit_and_flags_messages,
+    case_pass_form_offers_the_ten_reasons,
+    case_pass_from_lead_message_sets_passed_and_logs_reason,
+    case_pass_needs_a_reason,
+    case_bad_pass_signature_changes_nothing,
+    case_pass_from_picked_but_not_applied,
+    case_passed_lead_is_never_sent,
 ]
 
 

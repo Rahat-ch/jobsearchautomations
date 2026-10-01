@@ -330,6 +330,10 @@
             {
               "name": "applied_at",
               "type": "date"
+            },
+            {
+              "name": "passed_at",
+              "type": "date"
             }
           ]
         },
@@ -344,7 +348,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3080,
+        3300,
         400
       ],
       "parameters": {
@@ -359,7 +363,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        3520,
+        3740,
         400
       ],
       "parameters": {
@@ -395,7 +399,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        3740,
+        3960,
         400
       ],
       "parameters": {
@@ -452,13 +456,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7920,
+        8140,
         400
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// One Telegram message per picked lead, in fit order. Parse mode is HTML, so escape\n// posting text. The fit line is Claude's reply for the lead at the same position; if\n// Claude failed, the message goes out without it. Each message also gets signed links\n// for its Applied and Referral buttons.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\n// location_basis comes from Apply hard filters: us_remote, metro or unclear.\nfunction where(lead) {\n  const stated = [lead.location_text, lead.workplace_type].filter(Boolean).join(' · ');\n  if (lead.location_basis === 'unclear') return 'Location unclear' + (stated ? ' (' + stated + ')' : '');\n  if (lead.location_basis === 'us_remote' && !/remote/i.test(stated)) return stated + ' · Remote (US) option';\n  return stated || 'Location unclear';\n}\n\nfunction pay(lead) {\n  if (lead.pay_text) return lead.pay_text;\n  if (lead.pay_extracted_text) return lead.pay_extracted_text + ' (from the description)';\n  return 'Pay not listed';\n}\n\n// \"Fit 84 · role 25 · stack 16 · seniority 15 · location 15 · domain 7 · fresh 6\"\nfunction breakdown(lead) {\n  const p = lead.points || {};\n  const parts = [['role', p.roleFamily], ['stack', p.stack], ['seniority', p.seniority],\n    ['location', p.location], ['domain', p.domain], ['fresh', p.freshness]];\n  if (p.referral) parts.push(['referral', p.referral]);\n  return ['Fit ' + lead.fit_score].concat(parts.map(([name, v]) => name + ' ' + (v || 0))).join(' · ');\n}\n\n// Claude's reply as one clean line, or null.\nfunction fitLine(reply) {\n  const text = reply && typeof reply.merged_response === 'string' ? reply.merged_response\n    : ((reply && reply.content) || []).filter((c) => c.type === 'text').map((c) => c.text).join('');\n  const line = String(text || '').replace(/\\s+/g, ' ').trim().replace(/^[\"“]|[\"”]$/g, '');\n  return line || null;\n}\n\n// ---- Signed action links (the same block is in Build lead messages, Check Applied link\n// and Check Referral link). A link's signature is HMAC-SHA256 of \"<action>:<lead key>\"\n// with the signing secret, as hex, cut to 32 characters (128 bits). HMAC-SHA256 is\n// written out here because the Code node can't load Node's crypto module unless the\n// instance allows it (NODE_FUNCTION_ALLOW_BUILTIN), and the Crypto node's HMAC reads\n// its secret from a credential.\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n];\nconst rotr = (x, n) => (x >>> n) | (x << (32 - n));\nconst utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));\nfunction sha256(input) {\n  const bytes = input.slice();\n  const bits = input.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (8 * i)) & 0xff);\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let t = 0; t < 16; t++) {\n      const j = off + 4 * t;\n      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;\n    }\n    for (let t = 16; t < 64; t++) {\n      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);\n      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);\n      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;\n    }\n    let [a, b, c, d, e, f, g, h] = H;\n    for (let t = 0; t < 64; t++) {\n      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) >>> 0;\n      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });\n  }\n  return H.flatMap((x) => [x >>> 24, (x >>> 16) & 0xff, (x >>> 8) & 0xff, x & 0xff]);\n}\nfunction hmacSha256Hex(key, message) {\n  let k = utf8(key);\n  if (k.length > 64) k = sha256(k);\n  while (k.length < 64) k.push(0);\n  const inner = sha256(k.map((x) => x ^ 0x36).concat(utf8(message)));\n  return sha256(k.map((x) => x ^ 0x5c).concat(inner)).map((x) => x.toString(16).padStart(2, '0')).join('');\n}\nconst sign = (action, leadKey, secret) => hmacSha256Hex(secret, action + ':' + leadKey).slice(0, 32);\n// Compares every character, so the time taken doesn't show how much of a guess was right.\nfunction sameSignature(given, expected) {\n  const a = String(given || '');\n  let diff = a.length ^ expected.length;\n  for (let i = 0; i < expected.length; i++) diff |= (a.charCodeAt(i) || 0) ^ expected.charCodeAt(i);\n  return diff === 0;\n}\n// ---- end of signed action links\n\nconst secret = $('Signing secret').first().json.secret;\n// This instance's public base URL. n8n builds $execution.resumeUrl from its webhook\n// base URL (N8N_WEBHOOK_URL or WEBHOOK_URL) as <base>webhook-waiting/<execution id>;\n// production webhooks live at <base>webhook/ (n8n's default path prefix).\nconst base = String($execution.resumeUrl).split('?')[0].replace(/[^/]+\\/[^/]+$/, '');\nconst link = (action, key) => base + 'webhook/job-scout/' + action + '?lead=' + encodeURIComponent(key) +\n  '&sig=' + sign(action, key, secret);\n\nconst replies = $input.all();\nreturn $('Pick leads to send').all().map(({ json: lead }, i) => {\n  const line = fitLine(replies[i] && replies[i].json);\n  const lines = [\n    '<b>' + esc(lead.title) + '</b>',\n    esc(lead.company),\n    'Location: ' + esc(where(lead)),\n    'Pay: ' + esc(pay(lead)),\n    breakdown(lead),\n  ];\n  if (lead.sub_referral >= 1) lines.splice(2, 0, 'Referral available');\n  if (line) lines.push('<i>' + esc(line) + '</i>');\n  if (lead.published_at) lines.push('Posted: ' + String(lead.published_at).slice(0, 10));\n\n  return {\n    json: {\n      row_id: lead.id,\n      lead_key: lead.lead_key,\n      fit_score: lead.fit_score,\n      fit_line: line,\n      text: lines.join('\\n'),\n      silent: true,\n      button_text: 'Open posting',\n      button_url: lead.posting_url,\n      applied_url: link('applied', lead.lead_key),\n      referral_url: link('referral', lead.lead_key),\n    },\n  };\n});\n"
+        "jsCode": "// One Telegram message per picked lead, in fit order. Parse mode is HTML, so escape\n// posting text. The fit line is Claude's reply for the lead at the same position; if\n// Claude failed, the message goes out without it. Each message also gets signed links\n// for its Applied, Referral and Pass buttons.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\n// location_basis comes from Apply hard filters: us_remote, metro or unclear.\nfunction where(lead) {\n  const stated = [lead.location_text, lead.workplace_type].filter(Boolean).join(' · ');\n  if (lead.location_basis === 'unclear') return 'Location unclear' + (stated ? ' (' + stated + ')' : '');\n  if (lead.location_basis === 'us_remote' && !/remote/i.test(stated)) return stated + ' · Remote (US) option';\n  return stated || 'Location unclear';\n}\n\nfunction pay(lead) {\n  if (lead.pay_text) return lead.pay_text;\n  if (lead.pay_extracted_text) return lead.pay_extracted_text + ' (from the description)';\n  return 'Pay not listed';\n}\n\n// \"Fit 84 · role 25 · stack 16 · seniority 15 · location 15 · domain 7 · fresh 6\"\nfunction breakdown(lead) {\n  const p = lead.points || {};\n  const parts = [['role', p.roleFamily], ['stack', p.stack], ['seniority', p.seniority],\n    ['location', p.location], ['domain', p.domain], ['fresh', p.freshness]];\n  if (p.referral) parts.push(['referral', p.referral]);\n  return ['Fit ' + lead.fit_score].concat(parts.map(([name, v]) => name + ' ' + (v || 0))).join(' · ');\n}\n\n// Claude's reply as one clean line, or null.\nfunction fitLine(reply) {\n  const text = reply && typeof reply.merged_response === 'string' ? reply.merged_response\n    : ((reply && reply.content) || []).filter((c) => c.type === 'text').map((c) => c.text).join('');\n  const line = String(text || '').replace(/\\s+/g, ' ').trim().replace(/^[\"“]|[\"”]$/g, '');\n  return line || null;\n}\n\n// ---- Signed action links (the same block is in Build lead messages, Check Applied link,\n// Check Referral link and Check Pass form). A link's signature is HMAC-SHA256 of \"<action>:<lead key>\"\n// with the signing secret, as hex, cut to 32 characters (128 bits). HMAC-SHA256 is\n// written out here because the Code node can't load Node's crypto module unless the\n// instance allows it (NODE_FUNCTION_ALLOW_BUILTIN), and the Crypto node's HMAC reads\n// its secret from a credential.\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n];\nconst rotr = (x, n) => (x >>> n) | (x << (32 - n));\nconst utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));\nfunction sha256(input) {\n  const bytes = input.slice();\n  const bits = input.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (8 * i)) & 0xff);\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let t = 0; t < 16; t++) {\n      const j = off + 4 * t;\n      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;\n    }\n    for (let t = 16; t < 64; t++) {\n      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);\n      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);\n      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;\n    }\n    let [a, b, c, d, e, f, g, h] = H;\n    for (let t = 0; t < 64; t++) {\n      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) >>> 0;\n      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });\n  }\n  return H.flatMap((x) => [x >>> 24, (x >>> 16) & 0xff, (x >>> 8) & 0xff, x & 0xff]);\n}\nfunction hmacSha256Hex(key, message) {\n  let k = utf8(key);\n  if (k.length > 64) k = sha256(k);\n  while (k.length < 64) k.push(0);\n  const inner = sha256(k.map((x) => x ^ 0x36).concat(utf8(message)));\n  return sha256(k.map((x) => x ^ 0x5c).concat(inner)).map((x) => x.toString(16).padStart(2, '0')).join('');\n}\nconst sign = (action, leadKey, secret) => hmacSha256Hex(secret, action + ':' + leadKey).slice(0, 32);\n// Compares every character, so the time taken doesn't show how much of a guess was right.\nfunction sameSignature(given, expected) {\n  const a = String(given || '');\n  let diff = a.length ^ expected.length;\n  for (let i = 0; i < expected.length; i++) diff |= (a.charCodeAt(i) || 0) ^ expected.charCodeAt(i);\n  return diff === 0;\n}\n// ---- end of signed action links\n\nconst secret = $('Signing secret').first().json.secret;\n// This instance's public base URL. n8n builds $execution.resumeUrl from its webhook\n// base URL (N8N_WEBHOOK_URL or WEBHOOK_URL) as <base>webhook-waiting/<execution id>;\n// production webhooks live at <base>webhook/ (n8n's default path prefix).\nconst base = String($execution.resumeUrl).split('?')[0].replace(/[^/]+\\/[^/]+$/, '');\nconst link = (action, key) => base + 'webhook/job-scout/' + action + '?lead=' + encodeURIComponent(key) +\n  '&sig=' + sign(action, key, secret);\n// Pass opens the Pass form, served at <base>form/ (n8n's default form prefix). The title\n// and company are only shown on the form; the signature covers the lead key, and the\n// page after the form shows the lead as saved.\nconst passLink = (lead) => base + 'form/job-scout/pass?lead=' + encodeURIComponent(lead.lead_key) +\n  '&sig=' + sign('pass', lead.lead_key, secret) +\n  '&title=' + encodeURIComponent(String(lead.title || '').slice(0, 120)) +\n  '&company=' + encodeURIComponent(String(lead.company || '').slice(0, 80));\n\nconst replies = $input.all();\nreturn $('Pick leads to send').all().map(({ json: lead }, i) => {\n  const line = fitLine(replies[i] && replies[i].json);\n  const lines = [\n    '<b>' + esc(lead.title) + '</b>',\n    esc(lead.company),\n    'Location: ' + esc(where(lead)),\n    'Pay: ' + esc(pay(lead)),\n    breakdown(lead),\n  ];\n  if (lead.sub_referral >= 1) lines.splice(2, 0, 'Referral available');\n  if (line) lines.push('<i>' + esc(line) + '</i>');\n  if (lead.published_at) lines.push('Posted: ' + String(lead.published_at).slice(0, 10));\n\n  return {\n    json: {\n      row_id: lead.id,\n      lead_key: lead.lead_key,\n      fit_score: lead.fit_score,\n      fit_line: line,\n      text: lines.join('\\n'),\n      silent: true,\n      button_text: 'Open posting',\n      button_url: lead.posting_url,\n      applied_url: link('applied', lead.lead_key),\n      referral_url: link('referral', lead.lead_key),\n      pass_url: passLink(lead),\n    },\n  };\n});\n"
       }
     },
     {
@@ -467,7 +471,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8140,
+        8360,
         400
       ],
       "parameters": {
@@ -483,7 +487,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        8360,
+        8580,
         400
       ],
       "parameters": {
@@ -511,7 +515,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8580,
+        8800,
         400
       ],
       "parameters": {
@@ -530,7 +534,7 @@
       "maxTries": 3,
       "waitBetweenTries": 3000,
       "position": [
-        9020,
+        9240,
         500
       ],
       "parameters": {
@@ -567,6 +571,12 @@
                     "additionalFields": {
                       "url": "={{ $json.referral_url }}"
                     }
+                  },
+                  {
+                    "text": "Pass",
+                    "additionalFields": {
+                      "url": "={{ $json.pass_url }}"
+                    }
                   }
                 ]
               }
@@ -592,7 +602,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        9240,
+        9460,
         500
       ],
       "parameters": {
@@ -651,7 +661,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        9460,
+        9680,
         500
       ],
       "parameters": {
@@ -666,7 +676,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        8800,
+        9020,
         400
       ],
       "parameters": {
@@ -684,7 +694,7 @@
         20
       ],
       "parameters": {
-        "content": "## Job Scout: daily scan\n\nEvery morning this path scans the Ashby, Greenhouse and Lever boards listed in **Job Scout config**, saves one lead per posting in the `leads` Data Table, marks leads whose postings are gone as closed, scores the leads that pass the hard filters, and sends the best ones to Telegram.\n\n**Setup**\n1. Create a bot with @BotFather and pick its credential on **Send header**, **Send lead message** and **Send crash alert**.\n2. Add a Bearer Auth credential with your TypeSafe API key on **Ask Jev** and **Ask Jev again**, and an Anthropic credential on **Write fit line**.\n3. Fill in **Job Scout config** (see the note below it), including your **profileSummary**.\n4. Publish the workflow. The **Applied** and **Referral** buttons on each lead call this workflow's webhooks, so they work only while it's published (see Action links).\n\nThe `leads`, `state` and `referrals` tables are created on the first run if they don't exist. Job Scout never applies for jobs or contacts anyone.\n",
+        "content": "## Job Scout: daily scan\n\nEvery morning this path scans the Ashby, Greenhouse and Lever boards listed in **Job Scout config**, saves one lead per posting in the `leads` Data Table, marks leads whose postings are gone as closed, scores the leads that pass the hard filters, and sends the best ones to Telegram.\n\n**Setup**\n1. Create a bot with @BotFather and pick its credential on **Send header**, **Send lead message** and **Send crash alert**.\n2. Add a Bearer Auth credential with your TypeSafe API key on **Ask Jev** and **Ask Jev again**, and an Anthropic credential on **Write fit line**.\n3. Fill in **Job Scout config** (see the note below it), including your **profileSummary**.\n4. Publish the workflow. The **Applied**, **Referral** and **Pass** buttons on each lead call this workflow's webhooks and form, so they work only while it's published (see Action links and Pass form).\n\nThe `leads`, `state`, `referrals` and `passes` tables are created on the first run if they don't exist. Job Scout never applies for jobs or contacts anyone.\n",
         "color": 4,
         "width": 460,
         "height": 320
@@ -712,7 +722,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        3460,
+        3680,
         580
       ],
       "parameters": {
@@ -728,11 +738,11 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        7880,
+        8100,
         640
       ],
       "parameters": {
-        "content": "## Daily ping\n\n- **Pick leads to send** chooses leads with status `new`, not closed, `filter_result` `passed`, a role family, a fit score of at least **minFitScore**, first seen within the freshness window and with no `sent_at`, highest fit score first, up to `dailyCap`. Leads over the cap stay New and compete again on later scans.\n- **Send header** sends \"Job Scout: N new leads today\" with sound. When Jev couldn't score some leads, it adds \"· N couldn't be scored (retrying next scan)\".\n- On a day with nothing to send, it sends one silent message instead: \"Job Scout: no new leads today\", with how many postings were scanned, how many were filtered out, and how many couldn't be scored.\n- Each lead goes out as its own silent message, one per second, with an **Open posting** button and, below it, signed **Applied** and **Referral** buttons (see Action links). \"Referral available\" follows the company name when the company has a referral. It shows the pay text (or a salary found in the description, or \"Pay not listed\"), the location or \"Location unclear\", the fit score with its points per sub-score, and Claude's fit line (left out if Claude failed for that lead).\n- **Mark sent** sets `sent_at` and saves the fit line right after each message, so no lead is sent twice.\n\nBoth Telegram nodes use HTML parse mode and have the n8n attribution line turned off.\n",
+        "content": "## Daily ping\n\n- **Pick leads to send** chooses leads with status `new`, not closed, `filter_result` `passed`, a role family, a fit score of at least **minFitScore**, first seen within the freshness window and with no `sent_at`, highest fit score first, up to `dailyCap`. Leads over the cap stay New and compete again on later scans.\n- **Send header** sends \"Job Scout: N new leads today\" with sound. When Jev couldn't score some leads, it adds \"· N couldn't be scored (retrying next scan)\".\n- On a day with nothing to send, it sends one silent message instead: \"Job Scout: no new leads today\", with how many postings were scanned, how many were filtered out, and how many couldn't be scored.\n- Each lead goes out as its own silent message, one per second, with an **Open posting** button and, below it, signed **Applied**, **Referral** and **Pass** buttons (see Action links and Pass form). \"Referral available\" follows the company name when the company has a referral. It shows the pay text (or a salary found in the description, or \"Pay not listed\"), the location or \"Location unclear\", the fit score with its points per sub-score, and Claude's fit line (left out if Claude failed for that lead).\n- **Mark sent** sets `sent_at` and saves the fit line right after each message, so no lead is sent twice.\n\nBoth Telegram nodes use HTML parse mode and have the n8n attribution line turned off.\n",
         "color": 5,
         "width": 560,
         "height": 680
@@ -744,7 +754,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3300,
+        3520,
         400
       ],
       "parameters": {
@@ -759,7 +769,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        3020,
+        3240,
         580
       ],
       "parameters": {
@@ -777,7 +787,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        4840,
+        5060,
         400
       ],
       "parameters": {
@@ -817,7 +827,7 @@
       "typeVersion": 2,
       "alwaysOutputData": true,
       "position": [
-        5060,
+        5280,
         400
       ],
       "parameters": {
@@ -832,7 +842,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        5280,
+        5500,
         400
       ],
       "parameters": {
@@ -867,7 +877,7 @@
       "typeVersion": 4.5,
       "onError": "continueRegularOutput",
       "position": [
-        5500,
+        5720,
         300
       ],
       "parameters": {
@@ -902,7 +912,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6380,
+        6600,
         300
       ],
       "parameters": {
@@ -918,7 +928,7 @@
       "typeVersion": 1.1,
       "alwaysOutputData": true,
       "position": [
-        6600,
+        6820,
         300
       ],
       "parameters": {
@@ -953,7 +963,7 @@
       "typeVersion": 2,
       "alwaysOutputData": true,
       "position": [
-        6820,
+        7040,
         400
       ],
       "parameters": {
@@ -969,7 +979,7 @@
       "typeVersion": 1.1,
       "alwaysOutputData": true,
       "position": [
-        7040,
+        7260,
         400
       ],
       "parameters": {
@@ -1078,7 +1088,7 @@
       "typeVersion": 2,
       "alwaysOutputData": true,
       "position": [
-        7260,
+        7480,
         400
       ],
       "parameters": {
@@ -1097,7 +1107,7 @@
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput",
       "position": [
-        7700,
+        7920,
         400
       ],
       "parameters": {
@@ -1137,7 +1147,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        5040,
+        5260,
         600
       ],
       "parameters": {
@@ -1153,7 +1163,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2640,
+        2860,
         400
       ],
       "parameters": {
@@ -1172,7 +1182,7 @@
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput",
       "position": [
-        2860,
+        3080,
         400
       ],
       "parameters": {
@@ -1196,7 +1206,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        3960,
+        4180,
         400
       ],
       "parameters": {
@@ -1226,7 +1236,7 @@
       "typeVersion": 2,
       "alwaysOutputData": true,
       "position": [
-        4180,
+        4400,
         400
       ],
       "parameters": {
@@ -1241,7 +1251,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        4400,
+        4620,
         400
       ],
       "parameters": {
@@ -1276,7 +1286,7 @@
       "typeVersion": 1.1,
       "alwaysOutputData": true,
       "position": [
-        4620,
+        4840,
         260
       ],
       "parameters": {
@@ -1324,7 +1334,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        3920,
+        4140,
         580
       ],
       "parameters": {
@@ -1340,7 +1350,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        5720,
+        5940,
         300
       ],
       "parameters": {
@@ -1374,7 +1384,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5940,
+        6160,
         160
       ],
       "parameters": {
@@ -1393,7 +1403,7 @@
       "waitBetweenTries": 5000,
       "onError": "continueRegularOutput",
       "position": [
-        6160,
+        6380,
         160
       ],
       "parameters": {
@@ -1428,7 +1438,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        7480,
+        7700,
         400
       ],
       "parameters": {
@@ -1643,7 +1653,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        1100,
+        1320,
         400
       ],
       "parameters": {
@@ -1665,7 +1675,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        1320,
+        1540,
         400
       ],
       "parameters": {
@@ -1698,7 +1708,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1540,
+        1760,
         400
       ],
       "parameters": {
@@ -1732,7 +1742,7 @@
       "type": "n8n-nodes-base.crypto",
       "typeVersion": 2,
       "position": [
-        1760,
+        1980,
         560
       ],
       "parameters": {
@@ -1748,7 +1758,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        1980,
+        2200,
         560
       ],
       "parameters": {
@@ -1796,7 +1806,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2200,
+        2420,
         400
       ],
       "parameters": {
@@ -1821,7 +1831,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        2420,
+        2640,
         400
       ],
       "parameters": {
@@ -1902,6 +1912,31 @@
                 ],
                 "combinator": "and"
               }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "Pass",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "73a6ebe8-6ab6-4e09-85d7-8436e5b32ae8",
+                    "leftValue": "={{ $('Pass form').isExecuted }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
             }
           ]
         },
@@ -1914,7 +1949,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5120,
+        5340,
         1650
       ],
       "parameters": {
@@ -1929,7 +1964,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        5340,
+        5560,
         1650
       ],
       "parameters": {
@@ -1960,7 +1995,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        3140,
+        3360,
         1500
       ],
       "parameters": {
@@ -1990,13 +2025,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3360,
+        3580,
         1500
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Applied: the job seeker has applied. Nothing changes unless the link's signature\n// matches. A New or Picked lead becomes Applied with today's date, so it is never sent\n// again; a second tap changes nothing. A Passed lead stays Passed.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n// The page's heading and lines; lines are HTML, so posting text is escaped.\nconst page = (http_status, heading, lines, extra = {}) => [{ json: { http_status, heading, lines, ...extra } }];\n\n// ---- Signed action links (the same block is in Build lead messages, Check Applied link\n// and Check Referral link). A link's signature is HMAC-SHA256 of \"<action>:<lead key>\"\n// with the signing secret, as hex, cut to 32 characters (128 bits). HMAC-SHA256 is\n// written out here because the Code node can't load Node's crypto module unless the\n// instance allows it (NODE_FUNCTION_ALLOW_BUILTIN), and the Crypto node's HMAC reads\n// its secret from a credential.\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n];\nconst rotr = (x, n) => (x >>> n) | (x << (32 - n));\nconst utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));\nfunction sha256(input) {\n  const bytes = input.slice();\n  const bits = input.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (8 * i)) & 0xff);\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let t = 0; t < 16; t++) {\n      const j = off + 4 * t;\n      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;\n    }\n    for (let t = 16; t < 64; t++) {\n      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);\n      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);\n      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;\n    }\n    let [a, b, c, d, e, f, g, h] = H;\n    for (let t = 0; t < 64; t++) {\n      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) >>> 0;\n      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });\n  }\n  return H.flatMap((x) => [x >>> 24, (x >>> 16) & 0xff, (x >>> 8) & 0xff, x & 0xff]);\n}\nfunction hmacSha256Hex(key, message) {\n  let k = utf8(key);\n  if (k.length > 64) k = sha256(k);\n  while (k.length < 64) k.push(0);\n  const inner = sha256(k.map((x) => x ^ 0x36).concat(utf8(message)));\n  return sha256(k.map((x) => x ^ 0x5c).concat(inner)).map((x) => x.toString(16).padStart(2, '0')).join('');\n}\nconst sign = (action, leadKey, secret) => hmacSha256Hex(secret, action + ':' + leadKey).slice(0, 32);\n// Compares every character, so the time taken doesn't show how much of a guess was right.\nfunction sameSignature(given, expected) {\n  const a = String(given || '');\n  let diff = a.length ^ expected.length;\n  for (let i = 0; i < expected.length; i++) diff |= (a.charCodeAt(i) || 0) ^ expected.charCodeAt(i);\n  return diff === 0;\n}\n// ---- end of signed action links\n\nconst query = $('Applied link').first().json.query || {};\nconst key = String(query.lead || '');\nconst secret = $('Signing secret').first().json.secret;\nif (!key || !secret || !sameSignature(query.sig, sign('applied', key, secret))) {\n  return page(403, 'Invalid link', ['This link is not valid, so nothing was changed.']);\n}\nconst lead = $input.first().json;\nif (!lead.id || lead.lead_key !== key) return page(404, 'Lead not found', ['Nothing was changed.']);\nconst what = '<b>' + esc(lead.title) + '</b> at ' + esc(lead.company);\nif (lead.status === 'applied') {\n  const on = lead.applied_at ? ' on ' + String(lead.applied_at).slice(0, 10) : '';\n  return page(200, 'Already marked applied', [what, 'Marked applied' + on + '. Nothing was changed.']);\n}\nif (lead.status !== 'new' && lead.status !== 'picked') {\n  return page(409, 'Not changed', [what, 'Applied works for New or Picked leads. This lead is ' +\n    esc(lead.status || 'not set') + '.']);\n}\nreturn page(200, 'Marked applied', [what, \"Job Scout won't send this lead again.\"],\n  { update: true, row_id: lead.id });\n"
+        "jsCode": "// Applied: the job seeker has applied. Nothing changes unless the link's signature\n// matches. A New or Picked lead becomes Applied with today's date, so it is never sent\n// again; a second tap changes nothing. A Passed lead stays Passed.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n// The page's heading and lines; lines are HTML, so posting text is escaped.\nconst page = (http_status, heading, lines, extra = {}) => [{ json: { http_status, heading, lines, ...extra } }];\n\n// ---- Signed action links (the same block is in Build lead messages, Check Applied link,\n// Check Referral link and Check Pass form). A link's signature is HMAC-SHA256 of \"<action>:<lead key>\"\n// with the signing secret, as hex, cut to 32 characters (128 bits). HMAC-SHA256 is\n// written out here because the Code node can't load Node's crypto module unless the\n// instance allows it (NODE_FUNCTION_ALLOW_BUILTIN), and the Crypto node's HMAC reads\n// its secret from a credential.\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n];\nconst rotr = (x, n) => (x >>> n) | (x << (32 - n));\nconst utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));\nfunction sha256(input) {\n  const bytes = input.slice();\n  const bits = input.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (8 * i)) & 0xff);\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let t = 0; t < 16; t++) {\n      const j = off + 4 * t;\n      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;\n    }\n    for (let t = 16; t < 64; t++) {\n      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);\n      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);\n      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;\n    }\n    let [a, b, c, d, e, f, g, h] = H;\n    for (let t = 0; t < 64; t++) {\n      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) >>> 0;\n      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });\n  }\n  return H.flatMap((x) => [x >>> 24, (x >>> 16) & 0xff, (x >>> 8) & 0xff, x & 0xff]);\n}\nfunction hmacSha256Hex(key, message) {\n  let k = utf8(key);\n  if (k.length > 64) k = sha256(k);\n  while (k.length < 64) k.push(0);\n  const inner = sha256(k.map((x) => x ^ 0x36).concat(utf8(message)));\n  return sha256(k.map((x) => x ^ 0x5c).concat(inner)).map((x) => x.toString(16).padStart(2, '0')).join('');\n}\nconst sign = (action, leadKey, secret) => hmacSha256Hex(secret, action + ':' + leadKey).slice(0, 32);\n// Compares every character, so the time taken doesn't show how much of a guess was right.\nfunction sameSignature(given, expected) {\n  const a = String(given || '');\n  let diff = a.length ^ expected.length;\n  for (let i = 0; i < expected.length; i++) diff |= (a.charCodeAt(i) || 0) ^ expected.charCodeAt(i);\n  return diff === 0;\n}\n// ---- end of signed action links\n\nconst query = $('Applied link').first().json.query || {};\nconst key = String(query.lead || '');\nconst secret = $('Signing secret').first().json.secret;\nif (!key || !secret || !sameSignature(query.sig, sign('applied', key, secret))) {\n  return page(403, 'Invalid link', ['This link is not valid, so nothing was changed.']);\n}\nconst lead = $input.first().json;\nif (!lead.id || lead.lead_key !== key) return page(404, 'Lead not found', ['Nothing was changed.']);\nconst what = '<b>' + esc(lead.title) + '</b> at ' + esc(lead.company);\nif (lead.status === 'applied') {\n  const on = lead.applied_at ? ' on ' + String(lead.applied_at).slice(0, 10) : '';\n  return page(200, 'Already marked applied', [what, 'Marked applied' + on + '. Nothing was changed.']);\n}\nif (lead.status !== 'new' && lead.status !== 'picked') {\n  return page(409, 'Not changed', [what, 'Applied works for New or Picked leads. This lead is ' +\n    esc(lead.status || 'not set') + '.']);\n}\nreturn page(200, 'Marked applied', [what, \"Job Scout won't send this lead again.\"],\n  { update: true, row_id: lead.id });\n"
       }
     },
     {
@@ -2005,7 +2040,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        3580,
+        3800,
         1500
       ],
       "parameters": {
@@ -2039,7 +2074,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        3800,
+        4020,
         1420
       ],
       "parameters": {
@@ -2097,7 +2132,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4020,
+        4240,
         1420
       ],
       "parameters": {
@@ -2114,7 +2149,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        3140,
+        3360,
         1800
       ],
       "parameters": {
@@ -2144,13 +2179,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3360,
+        3580,
         1800
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Referral: the job seeker has someone at the lead's company who can refer them. It is a\n// flag on the company, saved in the referrals table by company key. Nothing changes\n// unless the link's signature matches. A second tap for the same company changes nothing.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n// The page's heading and lines; lines are HTML, so posting text is escaped.\nconst cfg = $('Job Scout config').first().json;\nconst weights = cfg.weights || {};\nconst DIMENSIONS = ['roleFamily', 'stack', 'seniority', 'location', 'domain', 'freshness', 'referral'];\nconst totalWeight = DIMENSIONS.reduce((s, d) => s + (Number(weights[d]) || 0), 0) || 1;\n// Points for a referral sub-score, rounded as Score and select rounds them.\nconst referralPoints = (sub) => Math.round((100 * (Number(weights.referral) || 0) * (Number(sub) || 0)) / totalWeight);\nconst page = (http_status, heading, lines, extra = {}) => [{ json: { http_status, heading, lines, ...extra } }];\n// A company's key: its name in lower case with only letters and digits, so \"PostHog\"\n// and \"posthog\" match.\nconst companyKey = (name) => String(name || '').toLowerCase().replace(/[^\\p{L}\\p{N}]/gu, '');\n\n// ---- Signed action links (the same block is in Build lead messages, Check Applied link\n// and Check Referral link). A link's signature is HMAC-SHA256 of \"<action>:<lead key>\"\n// with the signing secret, as hex, cut to 32 characters (128 bits). HMAC-SHA256 is\n// written out here because the Code node can't load Node's crypto module unless the\n// instance allows it (NODE_FUNCTION_ALLOW_BUILTIN), and the Crypto node's HMAC reads\n// its secret from a credential.\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n];\nconst rotr = (x, n) => (x >>> n) | (x << (32 - n));\nconst utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));\nfunction sha256(input) {\n  const bytes = input.slice();\n  const bits = input.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (8 * i)) & 0xff);\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let t = 0; t < 16; t++) {\n      const j = off + 4 * t;\n      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;\n    }\n    for (let t = 16; t < 64; t++) {\n      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);\n      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);\n      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;\n    }\n    let [a, b, c, d, e, f, g, h] = H;\n    for (let t = 0; t < 64; t++) {\n      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) >>> 0;\n      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });\n  }\n  return H.flatMap((x) => [x >>> 24, (x >>> 16) & 0xff, (x >>> 8) & 0xff, x & 0xff]);\n}\nfunction hmacSha256Hex(key, message) {\n  let k = utf8(key);\n  if (k.length > 64) k = sha256(k);\n  while (k.length < 64) k.push(0);\n  const inner = sha256(k.map((x) => x ^ 0x36).concat(utf8(message)));\n  return sha256(k.map((x) => x ^ 0x5c).concat(inner)).map((x) => x.toString(16).padStart(2, '0')).join('');\n}\nconst sign = (action, leadKey, secret) => hmacSha256Hex(secret, action + ':' + leadKey).slice(0, 32);\n// Compares every character, so the time taken doesn't show how much of a guess was right.\nfunction sameSignature(given, expected) {\n  const a = String(given || '');\n  let diff = a.length ^ expected.length;\n  for (let i = 0; i < expected.length; i++) diff |= (a.charCodeAt(i) || 0) ^ expected.charCodeAt(i);\n  return diff === 0;\n}\n// ---- end of signed action links\n\nconst query = $('Referral link').first().json.query || {};\nconst key = String(query.lead || '');\nconst secret = $('Signing secret').first().json.secret;\nif (!key || !secret || !sameSignature(query.sig, sign('referral', key, secret))) {\n  return page(403, 'Invalid link', ['This link is not valid, so nothing was changed.']);\n}\nconst lead = $input.first().json;\nif (!lead.id || lead.lead_key !== key) return page(404, 'Lead not found', ['Nothing was changed.']);\nconst company_key = companyKey(lead.company);\nif (!company_key) return page(409, 'Not changed', ['This lead has no company name.']);\nconst existing = $('Get referrals').all().map((i) => i.json).find((r) => r.company_key === company_key);\nif (existing) {\n  return page(200, 'Referral already saved', ['<b>' + esc(existing.company) + '</b>',\n    'Saved on ' + String(existing.set_at).slice(0, 10) + '. Every lead from ' + esc(existing.company) +\n    ' already gets the referral points (+' + referralPoints(1) + '). Nothing was changed.']);\n}\nreturn [{ json: { save: true, company_key, company: lead.company, lead_key: lead.lead_key, set_at: $now.toISO() } }];\n"
+        "jsCode": "// Referral: the job seeker has someone at the lead's company who can refer them. It is a\n// flag on the company, saved in the referrals table by company key. Nothing changes\n// unless the link's signature matches. A second tap for the same company changes nothing.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n// The page's heading and lines; lines are HTML, so posting text is escaped.\nconst cfg = $('Job Scout config').first().json;\nconst weights = cfg.weights || {};\nconst DIMENSIONS = ['roleFamily', 'stack', 'seniority', 'location', 'domain', 'freshness', 'referral'];\nconst totalWeight = DIMENSIONS.reduce((s, d) => s + (Number(weights[d]) || 0), 0) || 1;\n// Points for a referral sub-score, rounded as Score and select rounds them.\nconst referralPoints = (sub) => Math.round((100 * (Number(weights.referral) || 0) * (Number(sub) || 0)) / totalWeight);\nconst page = (http_status, heading, lines, extra = {}) => [{ json: { http_status, heading, lines, ...extra } }];\n// A company's key: its name in lower case with only letters and digits, so \"PostHog\"\n// and \"posthog\" match.\nconst companyKey = (name) => String(name || '').toLowerCase().replace(/[^\\p{L}\\p{N}]/gu, '');\n\n// ---- Signed action links (the same block is in Build lead messages, Check Applied link,\n// Check Referral link and Check Pass form). A link's signature is HMAC-SHA256 of \"<action>:<lead key>\"\n// with the signing secret, as hex, cut to 32 characters (128 bits). HMAC-SHA256 is\n// written out here because the Code node can't load Node's crypto module unless the\n// instance allows it (NODE_FUNCTION_ALLOW_BUILTIN), and the Crypto node's HMAC reads\n// its secret from a credential.\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n];\nconst rotr = (x, n) => (x >>> n) | (x << (32 - n));\nconst utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));\nfunction sha256(input) {\n  const bytes = input.slice();\n  const bits = input.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (8 * i)) & 0xff);\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let t = 0; t < 16; t++) {\n      const j = off + 4 * t;\n      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;\n    }\n    for (let t = 16; t < 64; t++) {\n      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);\n      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);\n      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;\n    }\n    let [a, b, c, d, e, f, g, h] = H;\n    for (let t = 0; t < 64; t++) {\n      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) >>> 0;\n      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });\n  }\n  return H.flatMap((x) => [x >>> 24, (x >>> 16) & 0xff, (x >>> 8) & 0xff, x & 0xff]);\n}\nfunction hmacSha256Hex(key, message) {\n  let k = utf8(key);\n  if (k.length > 64) k = sha256(k);\n  while (k.length < 64) k.push(0);\n  const inner = sha256(k.map((x) => x ^ 0x36).concat(utf8(message)));\n  return sha256(k.map((x) => x ^ 0x5c).concat(inner)).map((x) => x.toString(16).padStart(2, '0')).join('');\n}\nconst sign = (action, leadKey, secret) => hmacSha256Hex(secret, action + ':' + leadKey).slice(0, 32);\n// Compares every character, so the time taken doesn't show how much of a guess was right.\nfunction sameSignature(given, expected) {\n  const a = String(given || '');\n  let diff = a.length ^ expected.length;\n  for (let i = 0; i < expected.length; i++) diff |= (a.charCodeAt(i) || 0) ^ expected.charCodeAt(i);\n  return diff === 0;\n}\n// ---- end of signed action links\n\nconst query = $('Referral link').first().json.query || {};\nconst key = String(query.lead || '');\nconst secret = $('Signing secret').first().json.secret;\nif (!key || !secret || !sameSignature(query.sig, sign('referral', key, secret))) {\n  return page(403, 'Invalid link', ['This link is not valid, so nothing was changed.']);\n}\nconst lead = $input.first().json;\nif (!lead.id || lead.lead_key !== key) return page(404, 'Lead not found', ['Nothing was changed.']);\nconst company_key = companyKey(lead.company);\nif (!company_key) return page(409, 'Not changed', ['This lead has no company name.']);\nconst existing = $('Get referrals').all().map((i) => i.json).find((r) => r.company_key === company_key);\nif (existing) {\n  return page(200, 'Referral already saved', ['<b>' + esc(existing.company) + '</b>',\n    'Saved on ' + String(existing.set_at).slice(0, 10) + '. Every lead from ' + esc(existing.company) +\n    ' already gets the referral points (+' + referralPoints(1) + '). Nothing was changed.']);\n}\nreturn [{ json: { save: true, company_key, company: lead.company, lead_key: lead.lead_key, set_at: $now.toISO() } }];\n"
       }
     },
     {
@@ -2159,7 +2194,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        3580,
+        3800,
         1800
       ],
       "parameters": {
@@ -2193,7 +2228,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        3800,
+        4020,
         1720
       ],
       "parameters": {
@@ -2273,7 +2308,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        4020,
+        4240,
         1720
       ],
       "parameters": {
@@ -2303,7 +2338,7 @@
       "typeVersion": 2,
       "alwaysOutputData": true,
       "position": [
-        4240,
+        4460,
         1720
       ],
       "parameters": {
@@ -2318,7 +2353,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        4460,
+        4680,
         1720
       ],
       "parameters": {
@@ -2352,7 +2387,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        4680,
+        4900,
         1640
       ],
       "parameters": {
@@ -2420,7 +2455,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4900,
+        5120,
         1800
       ],
       "parameters": {
@@ -2439,8 +2474,8 @@
         700
       ],
       "parameters": {
-        "content": "## Every run: tables, secret, route\n\nEvery trigger runs **Job Scout config** and this setup, then **Route by trigger** sends the run down its own path: the daily scan, **Applied** or **Referral**.\n\n- The `leads`, `state` and `referrals` tables are created if they don't exist.\n- **Get referrals** reads the companies with a referral, for scoring.\n- **Signing secret**: the key that signs action links. On the first run **Generate signing secret** makes 32 random bytes (hex) and saves them in the `state` table as `signing_secret`. It isn't in the config, the messages or the template.",
-        "width": 760,
+        "content": "## Every run: tables, secret, route\n\nEvery trigger runs **Job Scout config** and this setup, then **Route by trigger** sends the run down its own path: the daily scan, **Applied**, **Referral** or **Pass**.\n\n- The `leads`, `state`, `referrals` and `passes` tables are created if they don't exist.\n- **Get referrals** reads the companies with a referral, for scoring.\n- **Signing secret**: the key that signs action links. On the first run **Generate signing secret** makes 32 random bytes (hex) and saves them in the `state` table as `signing_secret`. It isn't in the config, the messages or the template.",
+        "width": 980,
         "height": 380,
         "color": 7
       }
@@ -2451,13 +2486,411 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        2580,
+        2800,
         1340
       ],
       "parameters": {
-        "content": "## Action links: Applied and Referral\n\nEach lead message has **Applied** and **Referral** buttons. They open this workflow's GET webhooks `/webhook/job-scout/applied` and `/webhook/job-scout/referral` with `lead` (the lead key) and `sig` in the query string, and show a short page.\n\n- **Signature:** HMAC-SHA256 of `<action>:<lead key>` with the signing secret, first 32 hex characters. A wrong or missing signature gets \"Invalid link\" (403) and changes nothing. Links don't expire. To revoke every link, delete the `signing_secret` row in `state`; the next run makes a new one.\n- **Applied:** a New or Picked lead becomes `applied` with `applied_at`, and is never sent again. A second tap changes nothing; a Passed lead isn't changed (409).\n- **Referral:** saves the lead's company in `referrals` (key: the name in lower case, letters and digits only). Every current and future lead from that company gets the referral points and shows \"Referral available\". Its unsent leads are rescored at once, with no Jev calls.\n- **URLs** come from n8n itself: `$execution.resumeUrl` is built from the instance's public webhook URL (`WEBHOOK_URL` or `N8N_WEBHOOK_URL`), and the links use n8n's default `webhook/` prefix. Set that URL to an address your phone can reach.\n- **Publish** the workflow: production webhooks answer only while it's published. **Ignore Bots** is on, so link previewers get a 403 and nothing happens.\n- Anyone who can read the `state` table or this workflow's saved executions can make valid links.",
+        "content": "## Action links: Applied and Referral\n\nEach lead message has **Applied** and **Referral** buttons. They open this workflow's GET webhooks `/webhook/job-scout/applied` and `/webhook/job-scout/referral` with `lead` (the lead key) and `sig` in the query string, and show a short page.\n\n- **Signature:** HMAC-SHA256 of `<action>:<lead key>` with the signing secret, first 32 hex characters. A wrong or missing signature gets \"Invalid link\" (403) and changes nothing. Links don't expire. To revoke every link, delete the `signing_secret` row in `state`; the next run makes a new one.\n- **Applied:** a New or Picked lead becomes `applied` with `applied_at`, and is never sent again. A second tap changes nothing; a Passed lead isn't changed (409). **Pass** has its own form (see Pass form).\n- **Referral:** saves the lead's company in `referrals` (key: the name in lower case, letters and digits only). Every current and future lead from that company gets the referral points and shows \"Referral available\". Its unsent leads are rescored at once, with no Jev calls.\n- **URLs** come from n8n itself: `$execution.resumeUrl` is built from the instance's public webhook URL (`WEBHOOK_URL` or `N8N_WEBHOOK_URL`), and the links use n8n's default `webhook/` prefix. Set that URL to an address your phone can reach.\n- **Publish** the workflow: production webhooks answer only while it's published. **Ignore Bots** is on, so link previewers get a 403 and nothing happens.\n- Anyone who can read the `state` table or this workflow's saved executions can make valid links.",
         "width": 540,
         "height": 760,
+        "color": 6
+      }
+    },
+    {
+      "id": "82d2fba0-cbcf-4cb0-b3cf-1f2275e6607f",
+      "name": "Pass form",
+      "webhookId": "6e7e02d7-f5c1-4de8-aeaf-55ddc03710c1",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        -280,
+        940
+      ],
+      "parameters": {
+        "path": "job-scout/pass",
+        "formTitle": "Pass on this lead",
+        "formDescription": "={{ ($json.query || {}).title ? '<b>' + String($json.query.title).slice(0, 200).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</b>' + (($json.query || {}).company ? ' at ' + String($json.query.company).slice(0, 200).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '') + '\\n' : '' }}Pick one reason. The note is optional. Job Scout won't send this lead again.",
+        "formFields": {
+          "values": [
+            {
+              "fieldType": "hiddenField",
+              "fieldName": "lead"
+            },
+            {
+              "fieldType": "hiddenField",
+              "fieldName": "sig"
+            },
+            {
+              "fieldLabel": "Reason",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Comp below range"
+                  },
+                  {
+                    "option": "Wrong seniority"
+                  },
+                  {
+                    "option": "Not my role family"
+                  },
+                  {
+                    "option": "Remote claim is soft"
+                  },
+                  {
+                    "option": "Company stage off"
+                  },
+                  {
+                    "option": "Stack mismatch"
+                  },
+                  {
+                    "option": "Already applied"
+                  },
+                  {
+                    "option": "Not interested"
+                  },
+                  {
+                    "option": "Listing looks wrong"
+                  },
+                  {
+                    "option": "Stale repost"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Anything else? (optional)",
+              "fieldType": "textarea",
+              "placeholder": "What I would want to know before surfacing something like this again."
+            }
+          ]
+        },
+        "responseMode": "responseNode",
+        "options": {
+          "appendAttribution": false,
+          "buttonLabel": "Pass",
+          "ignoreBots": true
+        }
+      }
+    },
+    {
+      "id": "3d163abb-34fa-401e-8809-d85900df0b20",
+      "name": "Create passes table if missing",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        400
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "={{ $('Job Scout config').first().json.tablePrefix }}passes",
+        "columns": {
+          "column": [
+            {
+              "name": "lead_key",
+              "type": "string"
+            },
+            {
+              "name": "reason_code",
+              "type": "string"
+            },
+            {
+              "name": "note",
+              "type": "string"
+            },
+            {
+              "name": "passed_at",
+              "type": "date"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      }
+    },
+    {
+      "id": "344c6c32-cc6a-47c9-a97a-c6473e7de5c5",
+      "name": "Get lead for Pass",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "position": [
+        3360,
+        2280
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lead_key",
+              "condition": "eq",
+              "keyValue": "={{ String($('Pass form').first().json.lead || '') }}"
+            }
+          ]
+        },
+        "limit": 1
+      }
+    },
+    {
+      "id": "e23382f2-d98a-4a3e-baee-739ad540fc47",
+      "name": "Check Pass form",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3580,
+        2280
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Pass: the job seeker isn't pursuing the lead. Nothing changes unless the link's\n// signature matches and the form names one of the ten pass reasons. A New or Picked\n// lead becomes Passed with today's date, so it is never sent again, and its reason and\n// note go in the passes table (one row per lead). Passing a Passed lead again replaces\n// the reason and note in that row and keeps the first date. An Applied lead isn't changed.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n// The page's heading and lines; lines are HTML, so posting text is escaped.\nconst page = (http_status, heading, lines, extra = {}) => [{ json: { http_status, heading, lines, ...extra } }];\n// The ten pass reasons: the label the form shows, and the code that is saved. They must\n// match the Reason options on Pass form.\nconst REASONS = {\n  'Comp below range': 'comp_below_range',\n  'Wrong seniority': 'seniority_mismatch',\n  'Not my role family': 'role_family_off',\n  'Remote claim is soft': 'location_not_real',\n  'Company stage off': 'company_stage_off',\n  'Stack mismatch': 'tech_stack_off',\n  'Already applied': 'already_applied',\n  'Not interested': 'no_interest',\n  'Listing looks wrong': 'listing_looks_wrong',\n  'Stale repost': 'stale_repost',\n};\nconst LABELS = Object.fromEntries(Object.entries(REASONS).map(([label, code]) => [code, label]));\n\n// ---- Signed action links (the same block is in Build lead messages, Check Applied link,\n// Check Referral link and Check Pass form). A link's signature is HMAC-SHA256 of \"<action>:<lead key>\"\n// with the signing secret, as hex, cut to 32 characters (128 bits). HMAC-SHA256 is\n// written out here because the Code node can't load Node's crypto module unless the\n// instance allows it (NODE_FUNCTION_ALLOW_BUILTIN), and the Crypto node's HMAC reads\n// its secret from a credential.\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n];\nconst rotr = (x, n) => (x >>> n) | (x << (32 - n));\nconst utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));\nfunction sha256(input) {\n  const bytes = input.slice();\n  const bits = input.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (8 * i)) & 0xff);\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let t = 0; t < 16; t++) {\n      const j = off + 4 * t;\n      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;\n    }\n    for (let t = 16; t < 64; t++) {\n      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);\n      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);\n      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;\n    }\n    let [a, b, c, d, e, f, g, h] = H;\n    for (let t = 0; t < 64; t++) {\n      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) >>> 0;\n      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });\n  }\n  return H.flatMap((x) => [x >>> 24, (x >>> 16) & 0xff, (x >>> 8) & 0xff, x & 0xff]);\n}\nfunction hmacSha256Hex(key, message) {\n  let k = utf8(key);\n  if (k.length > 64) k = sha256(k);\n  while (k.length < 64) k.push(0);\n  const inner = sha256(k.map((x) => x ^ 0x36).concat(utf8(message)));\n  return sha256(k.map((x) => x ^ 0x5c).concat(inner)).map((x) => x.toString(16).padStart(2, '0')).join('');\n}\nconst sign = (action, leadKey, secret) => hmacSha256Hex(secret, action + ':' + leadKey).slice(0, 32);\n// Compares every character, so the time taken doesn't show how much of a guess was right.\nfunction sameSignature(given, expected) {\n  const a = String(given || '');\n  let diff = a.length ^ expected.length;\n  for (let i = 0; i < expected.length; i++) diff |= (a.charCodeAt(i) || 0) ^ expected.charCodeAt(i);\n  return diff === 0;\n}\n// ---- end of signed action links\n\nconst form = $('Pass form').first().json;\nconst key = String(form.lead || '');\nconst secret = $('Signing secret').first().json.secret;\nif (!key || !secret || !sameSignature(form.sig, sign('pass', key, secret))) {\n  return page(403, 'Invalid link', ['This link is not valid, so nothing was changed.']);\n}\nconst lead = $input.first().json;\nif (!lead.id || lead.lead_key !== key) return page(404, 'Lead not found', ['Nothing was changed.']);\nconst what = '<b>' + esc(lead.title) + '</b> at ' + esc(lead.company);\n// The form requires a reason; this catches a submission that skipped the form.\nconst choice = String(form['Reason'] || '').trim();\nconst reason_code = REASONS[choice] || '';\nif (!reason_code) {\n  return page(400, 'Pick a reason', [what, 'A pass needs one of the ten reasons. Nothing was changed.']);\n}\nconst note = String(form['Anything else? (optional)'] || '').trim().slice(0, 2000);\nconst label = esc(LABELS[reason_code]);\nif (lead.status === 'passed') {\n  const passed_at = lead.passed_at || $now.toISO();\n  const on = lead.passed_at ? 'Passed on ' + String(lead.passed_at).slice(0, 10) + '.' : '';\n  return page(200, 'Already passed', [what, on, 'Reason updated: ' + label + '.'],\n    { save: true, mark: false, row_id: lead.id, lead_key: key, reason_code, note, passed_at });\n}\nif (lead.status !== 'new' && lead.status !== 'picked') {\n  return page(409, 'Not changed', [what, 'Pass works for New or Picked leads. This lead is ' +\n    esc(lead.status || 'not set') + '.']);\n}\nreturn page(200, 'Passed', [what, 'Reason logged: ' + label + '.', \"Job Scout won't send this lead again.\"],\n  { save: true, mark: true, row_id: lead.id, lead_key: key, reason_code, note, passed_at: $now.toISO() });\n"
+      }
+    },
+    {
+      "id": "71eaf0e4-18c7-4fdf-a3ca-5c79af815f22",
+      "name": "Save pass?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3800,
+        2280
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "save-pass",
+              "leftValue": "={{ $json.save }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8691de47-d614-47a0-a99c-e55aa2583c84",
+      "name": "Save pass reason",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4020,
+        2200
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}passes"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lead_key",
+              "condition": "eq",
+              "keyValue": "={{ $json.lead_key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_key": "={{ $json.lead_key }}",
+            "reason_code": "={{ $json.reason_code }}",
+            "note": "={{ $json.note }}",
+            "passed_at": "={{ $json.passed_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lead_key",
+              "displayName": "lead_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason_code",
+              "displayName": "reason_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "passed_at",
+              "displayName": "passed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "38824813-cbcf-4308-8049-43f98f37287d",
+      "name": "Mark passed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4240,
+        2200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "mark-passed",
+              "leftValue": "={{ $('Check Pass form').first().json.mark }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "abd58655-57b6-43b2-86ba-f43bc4ce6b05",
+      "name": "Mark passed",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4460,
+        2120
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Check Pass form').first().json.row_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "passed",
+            "passed_at": "={{ $('Check Pass form').first().json.passed_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "passed_at",
+              "displayName": "passed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3051a210-7b9b-4dd6-97d4-1b043ce0c682",
+      "name": "Pass result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4680,
+        2200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The writes output the saved rows; the page comes from Check Pass form.\nreturn $('Check Pass form').all().map((item) => ({ json: item.json }));\n"
+      }
+    },
+    {
+      "id": "572996db-5a44-42aa-8d68-08bfd4674189",
+      "name": "Sticky Note pass form",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2800,
+        2140
+      ],
+      "parameters": {
+        "content": "## Pass form\n\nEach lead message has a **Pass** button. It opens this workflow's form at `/form/job-scout/pass` with `lead`, `sig` (signed `pass:<lead key>`), and the lead's `title` and `company` in the query string. `lead` and `sig` fill the form's hidden fields; the title and company are only shown on the form.\n\n- **Reason** is required, one of the ten pass reasons (label: saved code):\n  - Comp below range: `comp_below_range`\n  - Wrong seniority: `seniority_mismatch`\n  - Not my role family: `role_family_off`\n  - Remote claim is soft: `location_not_real`\n  - Company stage off: `company_stage_off`\n  - Stack mismatch: `tech_stack_off`\n  - Already applied: `already_applied`\n  - Not interested: `no_interest`\n  - Listing looks wrong: `listing_looks_wrong`\n  - Stale repost: `stale_repost`\n- **Anything else?** is an optional note.\n- **On submit:** a wrong or missing signature gets \"Invalid link\" and changes nothing; a missing reason gets \"Pick a reason\". A New or Picked lead becomes `passed` with `passed_at`, its reason and note are saved in `passes` (one row per lead), and it is never sent again. Passing it again replaces the reason and note and keeps the first date. An Applied lead isn't changed.\n- **Form Trigger version 2.1:** later versions refuse to run when a Respond to Webhook node follows them, and every trigger here leads to **Show page**. Version 2.1 answers the form through **Show page**, so the page after Pass shows what happened.\n- **Publish** the workflow: the form's production URL works only while it's published. **Ignore Bots** is on.",
+        "width": 540,
+        "height": 900,
         "color": 6
       }
     }
@@ -2936,7 +3369,7 @@
       "main": [
         [
           {
-            "node": "Get referrals",
+            "node": "Create passes table if missing",
             "type": "main",
             "index": 0
           }
@@ -3035,6 +3468,13 @@
         [
           {
             "node": "Get lead for Referral",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get lead for Pass",
             "type": "main",
             "index": 0
           }
@@ -3226,6 +3666,119 @@
           }
         ]
       ]
+    },
+    "Pass form": {
+      "main": [
+        [
+          {
+            "node": "Job Scout config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create passes table if missing": {
+      "main": [
+        [
+          {
+            "node": "Get referrals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get lead for Pass": {
+      "main": [
+        [
+          {
+            "node": "Check Pass form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Pass form": {
+      "main": [
+        [
+          {
+            "node": "Save pass?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save pass?": {
+      "main": [
+        [
+          {
+            "node": "Save pass reason",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save pass reason": {
+      "main": [
+        [
+          {
+            "node": "Mark passed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark passed?": {
+      "main": [
+        [
+          {
+            "node": "Mark passed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pass result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark passed": {
+      "main": [
+        [
+          {
+            "node": "Pass result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass result": {
+      "main": [
+        [
+          {
+            "node": "Build page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "nodeGroups": [
@@ -3237,6 +3790,7 @@
         "c5017551-8064-481d-9efa-4b624d401c57",
         "e6426b2e-87b3-4d9f-8ebc-5f001eb61912",
         "47dd862c-d7b6-4f29-ad2f-43c84fb03333",
+        "3d163abb-34fa-401e-8809-d85900df0b20",
         "8d334ac1-87f4-4c02-a067-ce9c77bada5f",
         "306496cd-5ec4-47ea-b1eb-ae1cef72560f",
         "e57edb50-ee8c-4428-b4df-b5753fe51d0b",
@@ -3299,7 +3853,7 @@
     {
       "id": "3d3dc24b-7fc4-410f-8c64-ef698ac5bcab",
       "name": "Send each lead",
-      "description": "Sends one silent message per lead with Open posting, Applied and Referral buttons and saves sent_at and the fit line, one per second.",
+      "description": "Sends one silent message per lead with Open posting, Applied, Referral and Pass buttons and saves sent_at and the fit line, one per second.",
       "nodeIds": [
         "879a79a1-b010-47d7-a997-f42c41880ddb",
         "4180ad9e-c641-4e99-9648-6f84a8570179",

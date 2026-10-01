@@ -108,11 +108,11 @@ The job seeker has submitted an application for the lead. It can follow New or P
 _Avoid_: Submitted
 
 **Action link**:
-A button on a lead message that changes the lead when tapped, such as Applied or Referral. It carries the lead key and a signature made with the signing secret, so a link that wasn't sent by Job Scout changes nothing.
+A button on a lead message that changes the lead when tapped, such as Applied or Referral. It carries the lead key and a signature made with the signing secret, so a link that wasn't sent by Job Scout changes nothing. The Pass link opens a short form for the pass reason first.
 _Avoid_: Callback, magic link
 
 **Pass**:
-The job seeker deciding not to pursue a lead. It moves the lead to Passed and always carries a pass reason.
+The job seeker deciding not to pursue a lead. It moves the lead to Passed and always carries a pass reason. It can follow New or Picked, not Applied. A lead has one pass reason; passing it again replaces the reason and keeps the date.
 _Avoid_: Reject, dismiss, skip, archive
 
 **Pass reason**:

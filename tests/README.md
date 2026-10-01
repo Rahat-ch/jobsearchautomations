@@ -1,6 +1,6 @@
 # Job Scout tests
 
-The tests run the Job Scout workflow's **Daily scan** trigger, and its **Applied link** and **Referral link** webhook triggers, through n8n's instance-level MCP `test_workflow` tool, with pinned data in place of the outside world:
+The tests run the Job Scout workflow's **Daily scan** trigger, its **Applied link** and **Referral link** webhook triggers, and its **Pass form** trigger, through n8n's instance-level MCP `test_workflow` tool, with pinned data in place of the outside world:
 
 - **Job Scout config** is pinned to the node's own defaults (so the filter rules, weights and thresholds under test are the shipped ones), with the boards the case scans (one Ashby board unless it says otherwise), a fake chat ID and the table prefix `jobscout_test_`. A case can override a field, such as `payFloor`, `weights` or `profileSummary`.
 - **Fetch board** is pinned to one full response per board, in the order **Board list** builds them (Ashby, then Greenhouse, then Lever): `fixtures/ashby-n8n.json` (board `n8n`), `fixtures/ashby-filters.json` (`testco`), `fixtures/ashby-scoring.json` (`scoreco`), `fixtures/greenhouse-instacart.json` (`instacart`), `fixtures/lever-spotify.json` (`spotify`), `fixtures/greenhouse-filters.json` (`ghco`) or `fixtures/lever-filters.json` (`leverco`). A board can instead be pinned to a failed fetch (an `error` item, as the node returns with "continue on error"). The runner moves each posting's publish date (Ashby `publishedAt`, Greenhouse `first_published`, Lever `createdAt`) to whole days before now, keeping the gaps between postings, so the freshness window and freshness points don't change as the recorded dates age.
@@ -10,10 +10,11 @@ The tests run the Job Scout workflow's **Daily scan** trigger, and its **Applied
 - **Send header**, **Send lead message** and **Send crash alert** are pinned to fake Telegram replies, so nothing is sent.
 
 - **Applied link** and **Referral link** are pinned to a GET request (`{headers, params, query, body}`) whose query holds `lead` and `sig`, as a tap on a lead message's button sends it.
+- **Pass form** is pinned to one form submission in the shape n8n 2.41.3 produced for a real one: `lead` and `sig` (the hidden fields), `Reason` (the label picked, or `null`), `Anything else? (optional)`, `submittedAt`, `formMode` and `formQueryParameters` (the link's query).
 
-Every other node runs for real, including the Data Table nodes, which write to `jobscout_test_leads`, `jobscout_test_state` (the signing secret) and `jobscout_test_referrals`. Each case clears the `jobscout_test_` tables first and again at the end, so each case's first run makes a new signing secret.
+Every other node runs for real, including the Data Table nodes, which write to `jobscout_test_leads`, `jobscout_test_state` (the signing secret), `jobscout_test_referrals` and `jobscout_test_passes`. Each case clears the `jobscout_test_` tables first and again at the end, so each case's first run makes a new signing secret.
 
-The cases check only external behavior: rows in the test table, and the items that reach the Jev, Claude and Telegram nodes. Two cases also check that those nodes send what they receive (Telegram: text, sound, HTML parse mode, no attribution, the Open posting button on the first row and the Applied and Referral buttons on the second; Jev: the endpoint, Bearer credential, that **Ask Jev again** sends the same request with retries, and the request body; Claude: the model, credential and a prompt that forbids invented facts), because pinned nodes don't evaluate their own parameters. Another reads the config node's defaults and its sticky note, to check them against the spec.
+The cases check only external behavior: rows in the test table, and the items that reach the Jev, Claude and Telegram nodes. Two cases also check that those nodes send what they receive (Telegram: text, sound, HTML parse mode, no attribution, the Open posting button on the first row and the Applied, Referral and Pass buttons on the second; Jev: the endpoint, Bearer credential, that **Ask Jev again** sends the same request with retries, and the request body; Claude: the model, credential and a prompt that forbids invented facts), because pinned nodes don't evaluate their own parameters. Another reads the config node's defaults and its sticky note, to check them against the spec.
 
 Resilience (issue #10):
 
@@ -30,7 +31,16 @@ Action links (issue #12):
 - Applied from a lead message marks a New lead `applied` with `applied_at`; a second tap answers "Already marked applied" and writes nothing. Picked → Applied works; a Passed lead gets 409 and stays Passed. An Applied lead that would have been next in fit order is never sent.
 - A changed character, a Referral signature on Applied (and the reverse), another lead's signature, a missing or shortened signature all get "Invalid link" (403) and change no row and no referral. A valid signature for an unknown lead gets 404.
 - Referral on a `testco` lead saves `testco` in `jobscout_test_referrals`, raises the fit score of every unsent `testco` lead by the referral points (5) with no Jev call, and moves the two leads that now reach the minimum (66 in this case) to `eligible`; `n8n` leads are unchanged. A second tap changes nothing. On the next scan a new `testco` posting gets the referral points, and every `testco` message has "Referral available" under the company and "referral 5" in the breakdown.
-- A static case checks what pinned nodes can't: both webhooks are GET on fixed paths with "Ignore Bots" on and answer through **Show page** (HTML, with the status the action chose), the three Code nodes that sign use the same code, and the config has no secret field.
+- A static case checks what pinned nodes can't: both webhooks are GET on fixed paths with "Ignore Bots" on and answer through **Show page** (HTML, with the status the action chose), the four Code nodes that sign use the same code, and the config has no secret field.
+
+Pass form (issue #13):
+
+- Every case that checks lead messages also checks the **Pass** link: `form/job-scout/pass` on the public base, the lead key, a signature over `pass:<lead key>` checked with Python's `hmac`, and the lead's title and company.
+- Submitting the form from a lead message's Pass link with a reason and a note marks the New lead `passed` with `passed_at` and writes one `jobscout_test_passes` row (`tech_stack_off`, the note, the same date). A second submit answers "Already passed", leaves the lead row as it was, and replaces the reason and note in the same passes row, keeping its date.
+- No reason (`null`) or a reason that isn't one of the ten labels (`role_too_backend`) gets "Pick a reason" (400) and writes nothing.
+- A changed character, the Applied signature, another lead's signature and an empty signature get "Invalid link" (403) and write nothing; a valid signature for an unknown lead gets 404.
+- Picked → Passed works; an Applied lead gets 409 and stays Applied. A Passed lead that would have been next in fit order is never sent.
+- A static case checks the form itself: Form Trigger 2.1 on the fixed path `job-scout/pass`, answering through **Show page**, Ignore Bots on, no attribution, hidden `lead` and `sig` fields filled from the query, a required **Reason** dropdown with the ten labels in the Hermes order, an optional note with the Hermes placeholder, the same label-to-code table in **Check Pass form**, and a fourth **Route by trigger** output.
 
 The expected filter result for every fixture posting is listed by title in `EXPECTED` in `run_tests.py`. Expected fit scores come from `expected_points`, which works out the fit score from the pinned Jev answers, the location basis, the posting's age and the weights, independently of the workflow's code.
 
@@ -77,6 +87,15 @@ Last run 2026-10-01: Telegram returned `ok: true` (message 46) for "[Test] Job S
 5. Unpublish the copy, archive it (`archive_workflow`; the public API refuses to delete a workflow that isn't archived) and delete it.
 
 Last run 2026-10-01 through the tunnel: a `TelegramBot (like TwitterBot)` user agent got 403 and the lead stayed New; a wrong signature got 403 "Invalid link"; the signed Applied link got 200 `text/html` with n8n's `Content-Security-Policy: sandbox` header and the lead became Applied; a repeat over localhost got "Already marked applied"; Referral got "Referral saved".
+
+## Manual check: the Pass form over HTTP
+
+`test_workflow` doesn't render or submit the form, so its HTTP behavior was checked once on a published copy, as for the action links (copy with `tablePrefix` `jobscout_test_`, a fake chat ID and **Daily scan** disabled; Job Scout itself unpublished; unpublish, archive and delete the copy afterwards). This sends no Telegram message.
+
+1. GET `<public base>form/job-scout/pass?lead=<key>&sig=<sig>&title=<title>&company=<company>` with a phone browser's user agent, and with a bot's.
+2. POST the form as the page does: multipart fields `field-0` (lead), `field-1` (sig), `field-2` (reason label) and `field-3` (note), to the same URL with its query string.
+
+Last run 2026-10-01 through the tunnel: a `TelegramBot (like TwitterBot)` user agent got 401; the page got 200 `text/html` with the sandbox CSP, the title "Pass on this lead", the lead's title and company in the description, both hidden fields prefilled, the ten labels, the placeholder, and no n8n attribution. POSTs got 403 "Invalid link" (wrong signature, lead stayed New), 400 "Pick a reason" (no reason), 200 "Passed" (lead `passed` with `passed_at`, one passes row `tech_stack_off` with the note), 200 "Already passed" over localhost (same row, now `no_interest`), and 409 "Not changed" for an Applied lead. Each POST answered with **Show page**'s HTML, which the form page shows in place of the form. The executions show the trigger output the tests pin.
 
 ## Fixtures
 
