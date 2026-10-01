@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Job Scout tests: run the scan trigger through n8n's MCP test_workflow tool.
+"""Job Scout tests: run the workflow's triggers through n8n's MCP test_workflow tool.
 
 Each case clears the jobscout_test_ tables, runs the "Daily scan" trigger with
 pinned data (fixture board response, test config, Jev and Claude replies, fake
-Telegram replies), and then checks only external behavior: rows in the test tables
-and the items that reached the Jev, Claude and Telegram nodes. The pinned config
+Telegram replies), and the "Applied link" and "Referral link" webhook triggers with
+a pinned GET request, and then checks only external behavior: rows in the test
+tables, the items that reached the Jev, Claude and Telegram nodes, and the page an
+action link returns. The pinned config
 starts from the defaults in the workflow's "Job Scout config" node, so the cases
 test the shipped rules, weights and thresholds.
 
@@ -14,6 +16,8 @@ test the shipped rules, weights and thresholds.
 Stdlib only. Needs the local n8n and N8N_API_KEY + N8N_MCP_TOKEN in .env.
 """
 import copy
+import hashlib
+import hmac
 import json
 import math
 import os
@@ -24,6 +28,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from html import escape as html_escape
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -35,6 +40,8 @@ WORKFLOW_NAME = "Job Scout"
 TRIGGER = "Daily scan"
 TEST_PREFIX = "jobscout_test_"
 LEADS_TABLE = TEST_PREFIX + "leads"
+STATE_TABLE = TEST_PREFIX + "state"
+REFERRALS_TABLE = TEST_PREFIX + "referrals"
 FAKE_CHAT_ID = "000000000"
 FIXTURES = ROOT / "tests/fixtures"
 FIXTURE = json.loads((FIXTURES / "ashby-n8n.json").read_text())
@@ -69,6 +76,11 @@ JEV_RETRY_NODE = "Ask Jev again"
 FIT_NODE = "Write fit line"
 CRASH_TRIGGER = "Scan crashed"
 CRASH_NODE = "Send crash alert"
+APPLIED_TRIGGER = "Applied link"
+REFERRAL_TRIGGER = "Referral link"
+PAGE_NODE = "Build page"
+RESPOND_NODE = "Show page"
+SIGNED_NODES = ("Build lead messages", "Check Applied link", "Check Referral link")
 
 ENV = n8n_mcp.load_env()
 
@@ -118,15 +130,18 @@ def find_table(name):
 
 
 def reset_test_tables():
-    table = find_table(LEADS_TABLE)
-    if table is None:
-        return  # the workflow creates it on its first run
-    assert table["name"].startswith(TEST_PREFIX), "refusing to clear a non-test table"
-    api("DELETE", f"/data-tables/{table['id']}/rows/clear")
+    # Clearing the state table also drops the signing secret, so each case's first run
+    # makes a new one.
+    for name in (LEADS_TABLE, STATE_TABLE, REFERRALS_TABLE):
+        table = find_table(name)
+        if table is None:
+            continue  # the workflow creates it on its first run
+        assert table["name"].startswith(TEST_PREFIX), "refusing to clear a non-test table"
+        api("DELETE", f"/data-tables/{table['id']}/rows/clear")
 
 
-def lead_rows():
-    table = find_table(LEADS_TABLE)
+def table_rows(name):
+    table = find_table(name)
     if table is None:
         return []
     out = mcp("get_data_table_rows", {"dataTableId": table["id"], "projectId": table["projectId"],
@@ -135,16 +150,25 @@ def lead_rows():
     return out["rows"]
 
 
+def lead_rows():
+    return table_rows(LEADS_TABLE)
+
+
 def rows_by_key():
     return {r["lead_key"]: r for r in lead_rows()}
 
 
 def set_first_seen(key, when):
     """Backdate a test lead's first sighting, as if an earlier scan had found it."""
+    update_lead(key, {"first_seen_at": when.isoformat().replace("+00:00", "Z")})
+
+
+def update_lead(key, data):
+    """Change a test lead's row directly, as the job seeker could on the Data tables page."""
     table = find_table(LEADS_TABLE)
     assert table["name"].startswith(TEST_PREFIX)
     body = {"filter": {"type": "and", "filters": [{"columnName": "lead_key", "condition": "eq", "value": key}]},
-            "data": {"first_seen_at": when.isoformat().replace("+00:00", "Z")}}
+            "data": data}
     req = urllib.request.Request(f"{API}/data-tables/{table['id']}/rows/update", method="PATCH",
                                  data=json.dumps(body).encode(), headers={
                                      "X-N8N-API-KEY": ENV["N8N_API_KEY"], "Content-Type": "application/json"})
@@ -406,7 +430,8 @@ def half_up(x):
     return math.floor(x + 0.5)
 
 
-def expected_points(key, weights=WEIGHTS, target=TARGET):
+def expected_points(key, weights=WEIGHTS, target=TARGET, referred=()):
+    """`referred` is the companies (board names) with a referral."""
     title = ALL_KEYS[key]["title"]
     family, p, stack, names, level, domain = JEV[title]
     sub = {
@@ -416,7 +441,7 @@ def expected_points(key, weights=WEIGHTS, target=TARGET):
         "location": {"us_remote": 1, "metro": 1, "unclear": 0.5}[BASIS.get(title, "us_remote")],
         "domain": r3(domain / 3),
         "freshness": max(0, 1 - (AGE[key] + 1e-4) / 30),  # a scan runs seconds after the rebase
-        "referral": 0,
+        "referral": 1 if key.split(":")[1] in referred else 0,
     }
     total = sum(weights.values())
     return {d: half_up(100 * weights[d] * sub[d] / total) for d in weights}
@@ -551,12 +576,84 @@ def same_instant(a, b):
     return parse_time(a) == parse_time(b)
 
 
+# ---------- signed action links ----------
+
+def signing_secret():
+    rows = table_rows(STATE_TABLE)
+    secrets = [r["value"] for r in rows if r["key"] == "signing_secret"]
+    assert len(secrets) == 1, f"expected one signing secret, found {len(secrets)}"
+    return secrets[0]
+
+
+def sign(action, key, secret=None):
+    """The signature Job Scout should put on a link: HMAC-SHA256 of "<action>:<lead key>"
+    with the stored secret, hex, first 32 characters."""
+    secret = secret or signing_secret()
+    return hmac.new(secret.encode(), f"{action}:{key}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def public_base():
+    """The instance's public webhook base, as n8n derives it (never printed)."""
+    base = ENV.get("N8N_WEBHOOK_URL") or ENV.get("WEBHOOK_URL") or "http://localhost:5678/"
+    return base if base.endswith("/") else base + "/"
+
+
+def link_query(url):
+    """The query of an action link, after checking (without printing it) that it points at
+    the production webhook on the public base."""
+    parts = urllib.parse.urlsplit(url)
+    assert url.startswith(public_base() + "webhook/job-scout/"), "action link isn't on the public webhook base"
+    query = urllib.parse.parse_qs(parts.query)
+    return parts.path.rsplit("/", 1)[1], {k: v[0] for k, v in query.items()}
+
+
+def run_action(wf, trigger, query, **config):
+    """Opens an action link: runs its webhook trigger with a pinned GET request. Returns the
+    page (status, heading, lines, html) and the run data."""
+    pin, _, _ = scan_pins(wf, **config)
+    del pin[TRIGGER]
+    pin[trigger] = [{"json": {"headers": {"user-agent": "Mozilla/5.0 (iPhone)"}, "params": {}, "query": query,
+                              "body": {}}}]
+    status, execution, run_data = run_pinned(wf, pin, trigger=trigger)
+    assert status == "success", f"{trigger} failed: {execution['data']['resultData'].get('error')}"
+    assert TRIGGER not in run_data, "the daily scan ran from an action link"
+    pages = items_reaching(run_data, RESPOND_NODE)
+    assert len(pages) == 1, f"expected one page, got {len(pages)}"
+    page = dict(pages[0], lines=items_reaching(run_data, PAGE_NODE)[0].get("lines", []))
+    return page, run_data
+
+
+def tap(wf, action, key, sig=None, **config):
+    """Taps a lead's Applied or Referral button, signed as Job Scout signs it unless `sig`
+    is given."""
+    trigger = APPLIED_TRIGGER if action == "applied" else REFERRAL_TRIGGER
+    query = {"lead": key, "sig": sign(action, key) if sig is None else sig}
+    return run_action(wf, trigger, {k: v for k, v in query.items() if v is not False}, **config)
+
+
+def check_page(page, status, heading):
+    assert (page["http_status"], page["heading"]) == (status, heading), (page["http_status"], page["heading"])
+    assert f"<h1>{heading}</h1>" in page["html"]
+
+
+def ran(run_data, node):
+    return bool(run_data.get(node))
+
+
 def check_lead_messages(leads, rows_by_key):
+    secret = signing_secret() if leads else None
     for msg in leads:
-        assert msg["silent"] is True, f"lead message not silent: {msg['lead_key']}"
+        key = msg["lead_key"]
+        assert msg["silent"] is True, f"lead message not silent: {key}"
         assert msg["button_text"] == "Open posting", msg
-        assert msg["button_url"] == ALL_KEYS[msg["lead_key"]]["jobUrl"], msg
-        assert msg["button_url"] == rows_by_key[msg["lead_key"]]["posting_url"]
+        assert msg["button_url"] == ALL_KEYS[key]["jobUrl"], msg
+        assert msg["button_url"] == rows_by_key[key]["posting_url"]
+        # Applied and Referral: signed links on the public base, without the secret.
+        for action in ("applied", "referral"):
+            path, query = link_query(msg[f"{action}_url"])
+            assert path == action and query == {"lead": key, "sig": sign(action, key, secret)}, \
+                f"{action} link for {key} has the wrong path, lead or signature"
+        assert secret not in json.dumps(msg), "the signing secret is in a lead message"
 
 
 def check_header(header, n, unscored=0):
@@ -685,9 +782,11 @@ def case_telegram_nodes_send_what_they_receive(wf):
         assert extra.get("parse_mode") == "HTML", f"{name}: parse mode not HTML"
         assert extra.get("appendAttribution") is False, f"{name}: attribution not off"
         assert extra.get("disable_notification") == "={{ $json.silent }}", name
-    button = nodes[LEAD_NODE]["parameters"]["inlineKeyboard"]["rows"][0]["row"]["buttons"][0]
-    assert button["text"] == "={{ $json.button_text }}"
-    assert button["additionalFields"]["url"] == "={{ $json.button_url }}"
+    # Row 1: Open posting. Row 2: Applied and Referral, as URL buttons to the signed links.
+    rows = [r["row"]["buttons"] for r in nodes[LEAD_NODE]["parameters"]["inlineKeyboard"]["rows"]]
+    got = [[(b["text"], b["additionalFields"]["url"]) for b in row] for row in rows]
+    assert got == [[("={{ $json.button_text }}", "={{ $json.button_url }}")],
+                   [("Applied", "={{ $json.applied_url }}"), ("Referral", "={{ $json.referral_url }}")]], got
 
 
 def case_jev_and_claude_nodes_call_what_they_receive(wf):
@@ -1332,6 +1431,175 @@ def case_reappearing_posting_clears_closed_at(wf):
     check_sent_order(leads, [top])
     assert row["sent_at"]
 
+# ---------- action links: Applied and Referral ----------
+
+def case_action_links_are_signed_get_webhooks(wf):
+    # Pinned triggers don't check their own parameters, so check them here: both action
+    # webhooks are GET on fixed paths (a ":param" path would get a UUID prefix), answer
+    # through Show page and ignore bots. The page is HTML with the status the action
+    # chose. Every Code node that signs uses the same code, and the config holds no secret.
+    nodes = {n["name"]: n for n in wf["nodes"]}
+    for name, path in ((APPLIED_TRIGGER, "job-scout/applied"), (REFERRAL_TRIGGER, "job-scout/referral")):
+        p = nodes[name]["parameters"]
+        assert (p.get("httpMethod"), p["path"], p["responseMode"]) == ("GET", path, "responseNode"), name
+        assert p["options"].get("ignoreBots") is True, f"{name}: Ignore Bots is off"
+        assert p.get("authentication", "none") == "none", f"{name}: the signature is the auth"
+    show = nodes[RESPOND_NODE]["parameters"]
+    assert show["respondWith"] == "text" and show["responseBody"] == "={{ $json.html }}"
+    assert show["options"]["responseCode"] == "={{ $json.http_status }}"
+    headers = {h["name"].lower(): h["value"] for h in show["options"]["responseHeaders"]["entries"]}
+    assert headers["content-type"].startswith("text/html"), headers
+    blocks = set()
+    for name in SIGNED_NODES:
+        code = nodes[name]["parameters"]["jsCode"]
+        blocks.add(code[code.index("// ---- Signed action links"):code.index("// ---- end of signed action links")])
+    assert len(blocks) == 1, "the Code nodes sign links differently"
+    assert not [k for k in config_defaults(wf) if "secret" in k.lower() or "sign" in k.lower()], "secret in config"
+
+
+def case_applied_from_new_sets_status_and_date(wf):
+    # The first run makes the signing secret and later runs reuse it. Tapping Applied in a
+    # lead message marks that New lead Applied with the date; a second tap changes nothing.
+    reset_test_tables()
+    run_data = run_scan(wf, judged=PASSED)
+    assert ran(run_data, "Generate signing secret"), "the first run didn't make a signing secret"
+    secret = signing_secret()
+    assert len(secret) == 64 and all(c in "0123456789abcdef" for c in secret), "secret isn't 32 bytes of hex"
+    leads = sent(run_data)[1]
+    check_lead_messages(leads, rows_by_key())
+    key = leads[0]["lead_key"]
+    _, query = link_query(leads[0]["applied_url"])
+    before = time.time()
+    page, run_data = run_action(wf, APPLIED_TRIGGER, query)
+    assert not ran(run_data, "Generate signing secret") and signing_secret() == secret, "the secret changed"
+    check_page(page, 200, "Marked applied")
+    assert page["lines"][0] == f"<b>{html_escape(ALL_KEYS[key]['title'], quote=False)}</b> at {BOARD}", page["lines"]
+    rows = rows_by_key()
+    assert rows[key]["status"] == "applied", rows[key]["status"]
+    assert parse_time(rows[key]["applied_at"]).timestamp() >= before - 5, rows[key]["applied_at"]
+    assert all(r["status"] == "new" and not r["applied_at"] for k, r in rows.items() if k != key)
+    page, run_data = run_action(wf, APPLIED_TRIGGER, query)
+    check_page(page, 200, "Already marked applied")
+    assert not ran(run_data, "Mark applied"), "a second tap wrote to the table"
+    assert rows_by_key()[key] == rows[key]
+
+
+def case_applied_from_picked_but_not_passed(wf):
+    reset_test_tables()
+    run_scan(wf, judged=PASSED, minFitScore=101)
+    picked, passed = PASSED[0], PASSED[1]
+    update_lead(picked, {"status": "picked"})
+    page, _ = tap(wf, "applied", picked)
+    check_page(page, 200, "Marked applied")
+    row = rows_by_key()[picked]
+    assert row["status"] == "applied" and row["applied_at"], row["status"]
+    update_lead(passed, {"status": "passed"})
+    page, run_data = tap(wf, "applied", passed)
+    check_page(page, 409, "Not changed")
+    assert not ran(run_data, "Mark applied")
+    row = rows_by_key()[passed]
+    assert row["status"] == "passed" and not row["applied_at"], row["status"]
+
+
+def case_tampered_link_changes_nothing(wf):
+    # A link whose signature doesn't match its action and lead gets the invalid page (403)
+    # and changes no row.
+    reset_test_tables()
+    run_scan(wf, judged=PASSED, minFitScore=101)
+    key, other = PASSED[0], PASSED[1]
+    good = sign("applied", key)
+    attempts = [
+        ("applied", good[:-1] + ("0" if good[-1] != "0" else "1")),  # one character changed
+        ("applied", sign("referral", key)),  # the Referral signature
+        ("applied", sign("applied", other)),  # another lead's signature
+        ("applied", False),  # no signature
+        ("applied", good[:16]),  # cut short
+        ("referral", sign("applied", key)),
+        ("referral", sign("referral", other)),
+    ]
+    before = sorted(lead_rows(), key=lambda r: r["id"])
+    for action, sig in attempts:
+        page, run_data = tap(wf, action, key, sig=sig)
+        check_page(page, 403, "Invalid link")
+        assert not ran(run_data, "Mark applied") and not ran(run_data, "Save referral"), (action, "acted")
+    assert sorted(lead_rows(), key=lambda r: r["id"]) == before, "a tampered link changed a lead"
+    assert table_rows(REFERRALS_TABLE) == [], "a tampered link saved a referral"
+    page, _ = tap(wf, "applied", f"ashby:{BOARD}:no-such-posting")
+    check_page(page, 404, "Lead not found")
+
+
+def case_applied_lead_is_never_sent(wf):
+    reset_test_tables()
+    order = fit_order(FPASSED)
+    run_data = run_scan(wf, daily_cap=2, board=FILTER_BOARD, fixture=FILTER_FIXTURE, judged=FPASSED)
+    check_sent_order(sent(run_data)[1], order[:2])
+    tap(wf, "applied", order[2])  # New and not sent yet: it would have been next
+    header, leads = sent(run_scan(wf, daily_cap=2, board=FILTER_BOARD, fixture=FILTER_FIXTURE))
+    check_header(header, 2)
+    check_sent_order(leads, order[3:5])
+    row = rows_by_key()[order[2]]
+    assert row["status"] == "applied" and not row["sent_at"], row["status"]
+
+
+def case_referral_raises_company_fit_and_flags_messages(wf):
+    # Referral on one testco lead: testco joins referrals, its unsent leads get the
+    # referral points at once (no Jev calls), and n8n's leads don't. A posting testco lists
+    # later gets them on its first scan, and testco messages say "Referral available".
+    # With a minimum of 66, two testco leads (64 and 65) reach it only with the referral.
+    reset_test_tables()
+    floor = 66
+    late = FBY_TITLE["Frontend Engineer"]
+    boards = lambda testco: [("ashby", FILTER_BOARD, testco), ("ashby", BOARD, FIXTURE)]  # noqa: E731
+    first = [k for k in FPASSED if k != late] + PASSED
+    run_data = run_scan(wf, boards=boards(without(FILTER_FIXTURE, [late])), judged=first, daily_cap=1,
+                        minFitScore=floor)
+    sent_first = [m["lead_key"] for m in sent(run_data)[1]]
+    check_sent_order(sent(run_data)[1], fit_order(first, min_fit=floor)[:1])
+    before = rows_by_key()
+    unsent = [k for k, r in before.items() if k.split(":")[1] == FILTER_BOARD and not r["sent_at"]]
+    tapped = next(k for k in FPASSED if k in unsent)
+    start = time.time()
+    page, _ = tap(wf, "referral", tapped, minFitScore=floor)
+    check_page(page, 200, "Referral saved")
+    assert f"{len(unsent)} unsent leads were rescored." in page["lines"], page["lines"]
+    assert any("(+5)" in line for line in page["lines"]), page["lines"]
+    refs = table_rows(REFERRALS_TABLE)
+    assert [(r["company_key"], r["company"], r["lead_key"]) for r in refs] == [(FILTER_BOARD, FILTER_BOARD, tapped)]
+    assert parse_time(refs[0]["set_at"]).timestamp() >= start - 5
+    after = rows_by_key()
+    raised = 0
+    for k, r in after.items():
+        b, title = before[k], ALL_KEYS[k]["title"]
+        if k not in unsent:
+            assert (r["sub_referral"], r["fit_score"]) == (b["sub_referral"], b["fit_score"]), title
+            continue
+        assert r["sub_referral"] == 1, title
+        if b["fit_score"] is None:
+            continue
+        assert r["fit_score"] == b["fit_score"] + 5, (title, b["fit_score"], r["fit_score"])
+        if b["selection_reason"] in ("below_min_fit", "eligible"):
+            assert r["selection_reason"] == ("eligible" if r["fit_score"] >= floor else "below_min_fit"), title
+            raised += b["selection_reason"] == "below_min_fit" and r["selection_reason"] == "eligible"
+    assert raised == 2, f"{raised} leads crossed the minimum, expected 2"
+    # A second tap, from another testco lead, changes nothing.
+    page, _ = tap(wf, "referral", next(k for k in unsent if k != tapped), minFitScore=floor)
+    check_page(page, 200, "Referral already saved")
+    assert table_rows(REFERRALS_TABLE) == refs
+    assert rows_by_key() == after, "a second tap changed leads"
+    # The next scan: the new testco posting gets the points too.
+    run_data = run_scan(wf, boards=boards(FILTER_FIXTURE), judged=[late], daily_cap=30, minFitScore=floor)
+    rows = rows_by_key()
+    assert rows[late]["sub_referral"] == 1, "a new lead from the company has no referral"
+    assert rows[late]["fit_score"] == expected_fit(late, referred={FILTER_BOARD}), rows[late]["fit_score"]
+    leads = sent(run_data)[1]
+    remaining = [k for k in FPASSED + PASSED if k not in sent_first]
+    check_sent_order(leads, fit_order(remaining, min_fit=floor, referred={FILTER_BOARD}))
+    check_lead_messages(leads, rows)
+    for m in leads:
+        lines, has = m["text"].split("\n"), m["lead_key"].split(":")[1] == FILTER_BOARD
+        assert (lines[2] == "Referral available") == has, (ALL_KEYS[m["lead_key"]]["title"], lines[:3])
+        assert ("· referral 5" in m["text"]) == has, m["text"]
+
 
 CASES = [
     case_telegram_nodes_send_what_they_receive,
@@ -1364,6 +1632,12 @@ CASES = [
     case_missing_posting_is_closed_quietly,
     case_failed_fetch_closes_nothing,
     case_reappearing_posting_clears_closed_at,
+    case_action_links_are_signed_get_webhooks,
+    case_applied_from_new_sets_status_and_date,
+    case_applied_from_picked_but_not_passed,
+    case_tampered_link_changes_nothing,
+    case_applied_lead_is_never_sent,
+    case_referral_raises_company_fit_and_flags_messages,
 ]
 
 

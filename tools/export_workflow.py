@@ -3,8 +3,8 @@
 
 Reads N8N_API_KEY and TELEGRAM_CHAT_ID from the git-ignored .env. Replaces the chat ID
 with YOUR_TELEGRAM_CHAT_ID and the config's profileSummary with a placeholder, drops
-instance and ownership fields, and refuses to write the file if any .env secret, the
-public host, the owner's project name, an email address, a line of the live profile
+instance and ownership fields, and refuses to write the file if any .env secret, a
+signing secret from a `*state` Data Table, the public host, the owner's project name, an email address, a line of the live profile
 summary, or a sentence from the resumes in RESUME_DIR (.env; default
 ~/Desktop/resumes/general) still appears in it. Never prints those values.
 
@@ -66,6 +66,16 @@ def strings(value):
     return []
 
 
+def signing_secrets():
+    """The action-link signing secrets kept in every `<prefix>state` Data Table."""
+    out = []
+    for t in get("/data-tables", {"limit": 100})["data"]:
+        if t["name"].endswith("state"):
+            out += [r.get("value") for r in get(f"/data-tables/{t['id']}/rows", {"limit": 100})["data"]
+                    if r.get("key") == "signing_secret"]
+    return [v for v in out if v]
+
+
 def resume_sentences(env):
     """Sentences of 40+ characters from the resume HTML files, whitespace collapsed."""
     folder = Path(env.get("RESUME_DIR") or DEFAULT_RESUME_DIR).expanduser()
@@ -102,7 +112,7 @@ def main():
         text = text.replace(chat_id, CHAT_PLACEHOLDER)
 
     # Everything that must never reach the public repo.
-    forbidden = [env.get(k) for k in SECRET_KEYS]
+    forbidden = [env.get(k) for k in SECRET_KEYS] + signing_secrets()
     host = urllib.parse.urlparse(env.get("N8N_WEBHOOK_URL", "")).hostname or env.get("JOBSCOUT_HOST", "")
     if host:
         forbidden += [host, ".".join(host.split(".")[-2:])]  # the host and its domain

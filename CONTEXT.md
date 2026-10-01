@@ -15,7 +15,7 @@ A person at a lead's company whom Job Scout suggests the job seeker reach out to
 _Avoid_: Contact, referral target, outreach target, lead
 
 **Referral**:
-The job seeker has someone at a company willing to refer them. It is a flag on the company, set from any of its leads, and applies to all its current and future leads.
+The job seeker has someone at a company willing to refer them. It is a flag on the company, set from any of its leads, and applies to all its current and future leads. Companies are matched by name, ignoring case, spaces and punctuation.
 _Avoid_: Referrer, intro
 
 ### Finding openings
@@ -106,6 +106,10 @@ _Avoid_: Select, like, save, interested
 **Applied**:
 The job seeker has submitted an application for the lead. It can follow New or Picked. Job Scout records it; it never applies.
 _Avoid_: Submitted
+
+**Action link**:
+A button on a lead message that changes the lead when tapped, such as Applied or Referral. It carries the lead key and a signature made with the signing secret, so a link that wasn't sent by Job Scout changes nothing.
+_Avoid_: Callback, magic link
 
 **Pass**:
 The job seeker deciding not to pursue a lead. It moves the lead to Passed and always carries a pass reason.

@@ -326,6 +326,10 @@
             {
               "name": "selection_reason",
               "type": "string"
+            },
+            {
+              "name": "applied_at",
+              "type": "date"
             }
           ]
         },
@@ -340,7 +344,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1100,
+        3080,
         400
       ],
       "parameters": {
@@ -355,7 +359,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        1540,
+        3520,
         400
       ],
       "parameters": {
@@ -391,7 +395,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        1760,
+        3740,
         400
       ],
       "parameters": {
@@ -448,13 +452,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5940,
+        7920,
         400
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// One Telegram message per picked lead, in fit order. Parse mode is HTML, so escape\n// posting text. The fit line is Claude's reply for the lead at the same position; if\n// Claude failed, the message goes out without it.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\n// location_basis comes from Apply hard filters: us_remote, metro or unclear.\nfunction where(lead) {\n  const stated = [lead.location_text, lead.workplace_type].filter(Boolean).join(' · ');\n  if (lead.location_basis === 'unclear') return 'Location unclear' + (stated ? ' (' + stated + ')' : '');\n  if (lead.location_basis === 'us_remote' && !/remote/i.test(stated)) return stated + ' · Remote (US) option';\n  return stated || 'Location unclear';\n}\n\nfunction pay(lead) {\n  if (lead.pay_text) return lead.pay_text;\n  if (lead.pay_extracted_text) return lead.pay_extracted_text + ' (from the description)';\n  return 'Pay not listed';\n}\n\n// \"Fit 84 · role 25 · stack 16 · seniority 15 · location 15 · domain 7 · fresh 6\"\nfunction breakdown(lead) {\n  const p = lead.points || {};\n  const parts = [['role', p.roleFamily], ['stack', p.stack], ['seniority', p.seniority],\n    ['location', p.location], ['domain', p.domain], ['fresh', p.freshness]];\n  if (p.referral) parts.push(['referral', p.referral]);\n  return ['Fit ' + lead.fit_score].concat(parts.map(([name, v]) => name + ' ' + (v || 0))).join(' · ');\n}\n\n// Claude's reply as one clean line, or null.\nfunction fitLine(reply) {\n  const text = reply && typeof reply.merged_response === 'string' ? reply.merged_response\n    : ((reply && reply.content) || []).filter((c) => c.type === 'text').map((c) => c.text).join('');\n  const line = String(text || '').replace(/\\s+/g, ' ').trim().replace(/^[\"“]|[\"”]$/g, '');\n  return line || null;\n}\n\nconst replies = $input.all();\nreturn $('Pick leads to send').all().map(({ json: lead }, i) => {\n  const line = fitLine(replies[i] && replies[i].json);\n  const lines = [\n    '<b>' + esc(lead.title) + '</b>',\n    esc(lead.company),\n    'Location: ' + esc(where(lead)),\n    'Pay: ' + esc(pay(lead)),\n    breakdown(lead),\n  ];\n  if (line) lines.push('<i>' + esc(line) + '</i>');\n  if (lead.published_at) lines.push('Posted: ' + String(lead.published_at).slice(0, 10));\n\n  return {\n    json: {\n      row_id: lead.id,\n      lead_key: lead.lead_key,\n      fit_score: lead.fit_score,\n      fit_line: line,\n      text: lines.join('\\n'),\n      silent: true,\n      button_text: 'Open posting',\n      button_url: lead.posting_url,\n    },\n  };\n});\n"
+        "jsCode": "// One Telegram message per picked lead, in fit order. Parse mode is HTML, so escape\n// posting text. The fit line is Claude's reply for the lead at the same position; if\n// Claude failed, the message goes out without it. Each message also gets signed links\n// for its Applied and Referral buttons.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\n// location_basis comes from Apply hard filters: us_remote, metro or unclear.\nfunction where(lead) {\n  const stated = [lead.location_text, lead.workplace_type].filter(Boolean).join(' · ');\n  if (lead.location_basis === 'unclear') return 'Location unclear' + (stated ? ' (' + stated + ')' : '');\n  if (lead.location_basis === 'us_remote' && !/remote/i.test(stated)) return stated + ' · Remote (US) option';\n  return stated || 'Location unclear';\n}\n\nfunction pay(lead) {\n  if (lead.pay_text) return lead.pay_text;\n  if (lead.pay_extracted_text) return lead.pay_extracted_text + ' (from the description)';\n  return 'Pay not listed';\n}\n\n// \"Fit 84 · role 25 · stack 16 · seniority 15 · location 15 · domain 7 · fresh 6\"\nfunction breakdown(lead) {\n  const p = lead.points || {};\n  const parts = [['role', p.roleFamily], ['stack', p.stack], ['seniority', p.seniority],\n    ['location', p.location], ['domain', p.domain], ['fresh', p.freshness]];\n  if (p.referral) parts.push(['referral', p.referral]);\n  return ['Fit ' + lead.fit_score].concat(parts.map(([name, v]) => name + ' ' + (v || 0))).join(' · ');\n}\n\n// Claude's reply as one clean line, or null.\nfunction fitLine(reply) {\n  const text = reply && typeof reply.merged_response === 'string' ? reply.merged_response\n    : ((reply && reply.content) || []).filter((c) => c.type === 'text').map((c) => c.text).join('');\n  const line = String(text || '').replace(/\\s+/g, ' ').trim().replace(/^[\"“]|[\"”]$/g, '');\n  return line || null;\n}\n\n// ---- Signed action links (the same block is in Build lead messages, Check Applied link\n// and Check Referral link). A link's signature is HMAC-SHA256 of \"<action>:<lead key>\"\n// with the signing secret, as hex, cut to 32 characters (128 bits). HMAC-SHA256 is\n// written out here because the Code node can't load Node's crypto module unless the\n// instance allows it (NODE_FUNCTION_ALLOW_BUILTIN), and the Crypto node's HMAC reads\n// its secret from a credential.\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n];\nconst rotr = (x, n) => (x >>> n) | (x << (32 - n));\nconst utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));\nfunction sha256(input) {\n  const bytes = input.slice();\n  const bits = input.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (8 * i)) & 0xff);\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let t = 0; t < 16; t++) {\n      const j = off + 4 * t;\n      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;\n    }\n    for (let t = 16; t < 64; t++) {\n      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);\n      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);\n      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;\n    }\n    let [a, b, c, d, e, f, g, h] = H;\n    for (let t = 0; t < 64; t++) {\n      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) >>> 0;\n      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });\n  }\n  return H.flatMap((x) => [x >>> 24, (x >>> 16) & 0xff, (x >>> 8) & 0xff, x & 0xff]);\n}\nfunction hmacSha256Hex(key, message) {\n  let k = utf8(key);\n  if (k.length > 64) k = sha256(k);\n  while (k.length < 64) k.push(0);\n  const inner = sha256(k.map((x) => x ^ 0x36).concat(utf8(message)));\n  return sha256(k.map((x) => x ^ 0x5c).concat(inner)).map((x) => x.toString(16).padStart(2, '0')).join('');\n}\nconst sign = (action, leadKey, secret) => hmacSha256Hex(secret, action + ':' + leadKey).slice(0, 32);\n// Compares every character, so the time taken doesn't show how much of a guess was right.\nfunction sameSignature(given, expected) {\n  const a = String(given || '');\n  let diff = a.length ^ expected.length;\n  for (let i = 0; i < expected.length; i++) diff |= (a.charCodeAt(i) || 0) ^ expected.charCodeAt(i);\n  return diff === 0;\n}\n// ---- end of signed action links\n\nconst secret = $('Signing secret').first().json.secret;\n// This instance's public base URL. n8n builds $execution.resumeUrl from its webhook\n// base URL (N8N_WEBHOOK_URL or WEBHOOK_URL) as <base>webhook-waiting/<execution id>;\n// production webhooks live at <base>webhook/ (n8n's default path prefix).\nconst base = String($execution.resumeUrl).split('?')[0].replace(/[^/]+\\/[^/]+$/, '');\nconst link = (action, key) => base + 'webhook/job-scout/' + action + '?lead=' + encodeURIComponent(key) +\n  '&sig=' + sign(action, key, secret);\n\nconst replies = $input.all();\nreturn $('Pick leads to send').all().map(({ json: lead }, i) => {\n  const line = fitLine(replies[i] && replies[i].json);\n  const lines = [\n    '<b>' + esc(lead.title) + '</b>',\n    esc(lead.company),\n    'Location: ' + esc(where(lead)),\n    'Pay: ' + esc(pay(lead)),\n    breakdown(lead),\n  ];\n  if (lead.sub_referral >= 1) lines.splice(2, 0, 'Referral available');\n  if (line) lines.push('<i>' + esc(line) + '</i>');\n  if (lead.published_at) lines.push('Posted: ' + String(lead.published_at).slice(0, 10));\n\n  return {\n    json: {\n      row_id: lead.id,\n      lead_key: lead.lead_key,\n      fit_score: lead.fit_score,\n      fit_line: line,\n      text: lines.join('\\n'),\n      silent: true,\n      button_text: 'Open posting',\n      button_url: lead.posting_url,\n      applied_url: link('applied', lead.lead_key),\n      referral_url: link('referral', lead.lead_key),\n    },\n  };\n});\n"
       }
     },
     {
@@ -463,7 +467,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6160,
+        8140,
         400
       ],
       "parameters": {
@@ -479,7 +483,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        6380,
+        8360,
         400
       ],
       "parameters": {
@@ -507,7 +511,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6600,
+        8580,
         400
       ],
       "parameters": {
@@ -526,7 +530,7 @@
       "maxTries": 3,
       "waitBetweenTries": 3000,
       "position": [
-        7040,
+        9020,
         500
       ],
       "parameters": {
@@ -544,6 +548,24 @@
                     "text": "={{ $json.button_text }}",
                     "additionalFields": {
                       "url": "={{ $json.button_url }}"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Applied",
+                    "additionalFields": {
+                      "url": "={{ $json.applied_url }}"
+                    }
+                  },
+                  {
+                    "text": "Referral",
+                    "additionalFields": {
+                      "url": "={{ $json.referral_url }}"
                     }
                   }
                 ]
@@ -570,7 +592,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        7260,
+        9240,
         500
       ],
       "parameters": {
@@ -629,7 +651,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        7480,
+        9460,
         500
       ],
       "parameters": {
@@ -644,7 +666,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        6820,
+        8800,
         400
       ],
       "parameters": {
@@ -662,7 +684,7 @@
         20
       ],
       "parameters": {
-        "content": "## Job Scout: daily scan\n\nEvery morning this path scans the Ashby, Greenhouse and Lever boards listed in **Job Scout config**, saves one lead per posting in the `leads` Data Table, marks leads whose postings are gone as closed, scores the leads that pass the hard filters, and sends the best ones to Telegram.\n\n**Setup**\n1. Create a bot with @BotFather and pick its credential on **Send header**, **Send lead message** and **Send crash alert**.\n2. Add a Bearer Auth credential with your TypeSafe API key on **Ask Jev** and **Ask Jev again**, and an Anthropic credential on **Write fit line**.\n3. Fill in **Job Scout config** (see the note below it), including your **profileSummary**.\n4. Publish the workflow.\n\nThe `leads` table is created on the first run if it doesn't exist. Job Scout never applies for jobs or contacts anyone.\n",
+        "content": "## Job Scout: daily scan\n\nEvery morning this path scans the Ashby, Greenhouse and Lever boards listed in **Job Scout config**, saves one lead per posting in the `leads` Data Table, marks leads whose postings are gone as closed, scores the leads that pass the hard filters, and sends the best ones to Telegram.\n\n**Setup**\n1. Create a bot with @BotFather and pick its credential on **Send header**, **Send lead message** and **Send crash alert**.\n2. Add a Bearer Auth credential with your TypeSafe API key on **Ask Jev** and **Ask Jev again**, and an Anthropic credential on **Write fit line**.\n3. Fill in **Job Scout config** (see the note below it), including your **profileSummary**.\n4. Publish the workflow. The **Applied** and **Referral** buttons on each lead call this workflow's webhooks, so they work only while it's published (see Action links).\n\nThe `leads`, `state` and `referrals` tables are created on the first run if they don't exist. Job Scout never applies for jobs or contacts anyone.\n",
         "color": 4,
         "width": 460,
         "height": 320
@@ -678,7 +700,7 @@
         580
       ],
       "parameters": {
-        "content": "## Job Scout config\n\nEdit these fields in the **Job Scout config** node:\n\n- **ashbyBoards**: Ashby board names to scan, as a list. The board name is the part after `jobs.ashbyhq.com/` in a company's job board link. Default: `n8n`, `posthog`, `ramp`.\n- **greenhouseBoards**: Greenhouse board names, the part after `boards.greenhouse.io/` or `job-boards.greenhouse.io/` in a company's Greenhouse job board link. Default: `instacart`.\n- **leverBoards**: Lever site names, the part after `jobs.lever.co/` in a company's Lever job board link. Default: `palantir`, `spotify`.\n- A board whose list can't be fetched is skipped for that scan, and none of its leads are marked closed.\n- **telegramChatId**: the chat the daily ping goes to. Tap Start in your bot, open `https://api.telegram.org/bot<token>/getUpdates` once, and copy `message.chat.id`.\n- **dailyCap**: the most leads one daily ping sends. Leads over the cap stay New and go out on a later day. Default 10.\n- **tablePrefix**: put in front of every Data Table name, so `jobscout_` gives `jobscout_leads`. n8n looks tables up by a \"name contains\" match, so no other table name may contain the full name (for example, don't use an empty prefix if `jobscout_leads` exists). The tests use `jobscout_test_`.\n- **roleFamilies**: the kinds of roles you want, each with a `name`, a `description` and the `titleKeywords` that mark it. Jev picks a lead's family from these (or none of them), and every family scores the same. They don't filter anything. Default: DevEx/Product PM, FDE/Solutions, Product/Frontend Engineering, and DevRel/DevEx.\n- **excludedTitles**: a posting whose title contains one of these words or phrases is filtered out. Case doesn't matter and only whole words match, so `Finance` doesn't match \"Fintech\" and `HR` doesn't match \"HRIS\". Only the title is checked, never the department: developer relations roles often sit in Marketing. Default: non-engineering operations titles (Accountant, Finance, Legal, Counsel, Paralegal, HR, People Ops, Office Manager, Facilities, Executive Assistant). `Marketing` is deliberately not on the list.\n- **excludedTitleOverrides**: a title that contains one of these words is never excluded, so \"Software Engineer, Finance Platform\" is kept while \"Finance Manager\" is filtered out. Same whole-word matching. Default: Engineer, Engineering, Developer, Software, SWE, Architect, Programmer, Advocate, DevRel, Product Manager, PM, Platform.\n- **locationRules**:\n  - `usRemote`: keep postings that offer remote work in the US, including ones where \"Remote (US)\" is only a secondary location. Default `true`.\n  - `usCountryNames`: the names that count as the US.\n  - `metros`: areas where you'd also take non-remote work. Each has `cities`, `regions` (if a posting states a state, it must be one of these) and `workplaceTypes` (`Remote`, `Hybrid`, `OnSite`; Lever's and Greenhouse's workplace types are mapped to these). Default: Dallas–Fort Worth with its suburbs, remote, hybrid or on-site. Austin is not in the list, so only remote US roles based there pass.\n  - A posting with no location, or one that can't be placed, passes and shows as \"Location unclear\".\n- **payFloor**: the lowest yearly base pay you'd take, in US dollars. A posting is filtered out only when its stated USD base salary range tops out below the floor. Equity, bonus and commission don't count. Hourly pay counts at 2,080 hours a year. No stated pay, or pay in another currency, passes; the message shows the posting's pay text or \"Pay not listed\". Default 180000.\n\n- **profileSummary**: a few short lines about you: target roles, core stack, years of experience, domains, the seniority you want, and location. Jev judges stack and domain fit against it, and Claude writes each lead's fit line from it. Keep it short and factual, and don't paste a resume. Changing it makes Jev judge the unsent leads again on the next scan.\n- **weights**: points for each sub-score: `roleFamily`, `stack`, `seniority`, `location`, `domain`, `freshness` and `referral`. They're scaled to add up to 100. Default 25, 20, 15, 15, 10, 10, 5. A weight change re-ranks leads on the next scan without new Jev calls.\n- **targetSeniority**: the levels that get full seniority points, from Jev's levels `intern_junior`, `mid`, `senior`, `lead`, `staff_plus`, `manager` and `founding`. A posting that states no level gets half the points, and any other level a fifth. Default `senior`, `lead`, `founding`.\n- **minFitScore**: the lowest fit score a lead can be sent with. Default 60.\n- **freshnessWindowDays**: how many days after Job Scout first sees a lead it can still be sent; only leads inside the window are judged by Jev. Separately, the freshness sub-score falls from full to zero as the posting ages (counted from the earlier of its publish date and first sighting) across the same number of days, so an old posting found today can still be sent but ranks lower. Default 30.\n- **jevModel**: the TypeSafe Jev model version. It's pinned so scores don't shift when TypeSafe ships a new version; changing it makes Jev judge the unsent leads again. Default `jev-1.13.0`.\n\n**Run time** is set on the **Daily scan** trigger, not here, because a trigger's settings can't read other nodes. Default 8:00 in the instance timezone. If n8n is down at that time, the most recent missed scan runs when it comes back.",
+        "content": "## Job Scout config\n\nEdit these fields in the **Job Scout config** node:\n\n- **ashbyBoards**: Ashby board names to scan, as a list. The board name is the part after `jobs.ashbyhq.com/` in a company's job board link. Default: `n8n`, `posthog`, `ramp`.\n- **greenhouseBoards**: Greenhouse board names, the part after `boards.greenhouse.io/` or `job-boards.greenhouse.io/` in a company's Greenhouse job board link. Default: `instacart`.\n- **leverBoards**: Lever site names, the part after `jobs.lever.co/` in a company's Lever job board link. Default: `palantir`, `spotify`.\n- A board whose list can't be fetched is skipped for that scan, and none of its leads are marked closed.\n- **telegramChatId**: the chat the daily ping goes to. Tap Start in your bot, open `https://api.telegram.org/bot<token>/getUpdates` once, and copy `message.chat.id`.\n- **dailyCap**: the most leads one daily ping sends. Leads over the cap stay New and go out on a later day. Default 10.\n- **tablePrefix**: put in front of every Data Table name, so `jobscout_` gives `jobscout_leads`. n8n looks tables up by a \"name contains\" match, so no other table name may contain the full name (for example, don't use an empty prefix if `jobscout_leads` exists). The tests use `jobscout_test_`.\n- **roleFamilies**: the kinds of roles you want, each with a `name`, a `description` and the `titleKeywords` that mark it. Jev picks a lead's family from these (or none of them), and every family scores the same. They don't filter anything. Default: DevEx/Product PM, FDE/Solutions, Product/Frontend Engineering, and DevRel/DevEx.\n- **excludedTitles**: a posting whose title contains one of these words or phrases is filtered out. Case doesn't matter and only whole words match, so `Finance` doesn't match \"Fintech\" and `HR` doesn't match \"HRIS\". Only the title is checked, never the department: developer relations roles often sit in Marketing. Default: non-engineering operations titles (Accountant, Finance, Legal, Counsel, Paralegal, HR, People Ops, Office Manager, Facilities, Executive Assistant). `Marketing` is deliberately not on the list.\n- **excludedTitleOverrides**: a title that contains one of these words is never excluded, so \"Software Engineer, Finance Platform\" is kept while \"Finance Manager\" is filtered out. Same whole-word matching. Default: Engineer, Engineering, Developer, Software, SWE, Architect, Programmer, Advocate, DevRel, Product Manager, PM, Platform.\n- **locationRules**:\n  - `usRemote`: keep postings that offer remote work in the US, including ones where \"Remote (US)\" is only a secondary location. Default `true`.\n  - `usCountryNames`: the names that count as the US.\n  - `metros`: areas where you'd also take non-remote work. Each has `cities`, `regions` (if a posting states a state, it must be one of these) and `workplaceTypes` (`Remote`, `Hybrid`, `OnSite`; Lever's and Greenhouse's workplace types are mapped to these). Default: Dallas–Fort Worth with its suburbs, remote, hybrid or on-site. Austin is not in the list, so only remote US roles based there pass.\n  - A posting with no location, or one that can't be placed, passes and shows as \"Location unclear\".\n- **payFloor**: the lowest yearly base pay you'd take, in US dollars. A posting is filtered out only when its stated USD base salary range tops out below the floor. Equity, bonus and commission don't count. Hourly pay counts at 2,080 hours a year. No stated pay, or pay in another currency, passes; the message shows the posting's pay text or \"Pay not listed\". Default 180000.\n\n- **profileSummary**: a few short lines about you: target roles, core stack, years of experience, domains, the seniority you want, and location. Jev judges stack and domain fit against it, and Claude writes each lead's fit line from it. Keep it short and factual, and don't paste a resume. Changing it makes Jev judge the unsent leads again on the next scan.\n- **weights**: points for each sub-score: `roleFamily`, `stack`, `seniority`, `location`, `domain`, `freshness` and `referral`. They're scaled to add up to 100. Default 25, 20, 15, 15, 10, 10, 5. The referral points go to every lead from a company you've tapped **Referral** on. A weight change re-ranks leads on the next scan without new Jev calls.\n- **targetSeniority**: the levels that get full seniority points, from Jev's levels `intern_junior`, `mid`, `senior`, `lead`, `staff_plus`, `manager` and `founding`. A posting that states no level gets half the points, and any other level a fifth. Default `senior`, `lead`, `founding`.\n- **minFitScore**: the lowest fit score a lead can be sent with. Default 60.\n- **freshnessWindowDays**: how many days after Job Scout first sees a lead it can still be sent; only leads inside the window are judged by Jev. Separately, the freshness sub-score falls from full to zero as the posting ages (counted from the earlier of its publish date and first sighting) across the same number of days, so an old posting found today can still be sent but ranks lower. Default 30.\n- **jevModel**: the TypeSafe Jev model version. It's pinned so scores don't shift when TypeSafe ships a new version; changing it makes Jev judge the unsent leads again. Default `jev-1.13.0`.\n\n**Run time** is set on the **Daily scan** trigger, not here, because a trigger's settings can't read other nodes. Default 8:00 in the instance timezone. If n8n is down at that time, the most recent missed scan runs when it comes back.",
         "color": 6,
         "width": 700,
         "height": 1500
@@ -690,7 +712,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1480,
+        3460,
         580
       ],
       "parameters": {
@@ -706,11 +728,11 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        5900,
+        7880,
         640
       ],
       "parameters": {
-        "content": "## Daily ping\n\n- **Pick leads to send** chooses leads with status `new`, not closed, `filter_result` `passed`, a role family, a fit score of at least **minFitScore**, first seen within the freshness window and with no `sent_at`, highest fit score first, up to `dailyCap`. Leads over the cap stay New and compete again on later scans.\n- **Send header** sends \"Job Scout: N new leads today\" with sound. When Jev couldn't score some leads, it adds \"· N couldn't be scored (retrying next scan)\".\n- On a day with nothing to send, it sends one silent message instead: \"Job Scout: no new leads today\", with how many postings were scanned, how many were filtered out, and how many couldn't be scored.\n- Each lead goes out as its own silent message with an **Open posting** button, one per second. It shows the pay text (or a salary found in the description, or \"Pay not listed\"), the location or \"Location unclear\", the fit score with its points per sub-score, and Claude's fit line (left out if Claude failed for that lead).\n- **Mark sent** sets `sent_at` and saves the fit line right after each message, so no lead is sent twice.\n\nBoth Telegram nodes use HTML parse mode and have the n8n attribution line turned off.\n",
+        "content": "## Daily ping\n\n- **Pick leads to send** chooses leads with status `new`, not closed, `filter_result` `passed`, a role family, a fit score of at least **minFitScore**, first seen within the freshness window and with no `sent_at`, highest fit score first, up to `dailyCap`. Leads over the cap stay New and compete again on later scans.\n- **Send header** sends \"Job Scout: N new leads today\" with sound. When Jev couldn't score some leads, it adds \"· N couldn't be scored (retrying next scan)\".\n- On a day with nothing to send, it sends one silent message instead: \"Job Scout: no new leads today\", with how many postings were scanned, how many were filtered out, and how many couldn't be scored.\n- Each lead goes out as its own silent message, one per second, with an **Open posting** button and, below it, signed **Applied** and **Referral** buttons (see Action links). \"Referral available\" follows the company name when the company has a referral. It shows the pay text (or a salary found in the description, or \"Pay not listed\"), the location or \"Location unclear\", the fit score with its points per sub-score, and Claude's fit line (left out if Claude failed for that lead).\n- **Mark sent** sets `sent_at` and saves the fit line right after each message, so no lead is sent twice.\n\nBoth Telegram nodes use HTML parse mode and have the n8n attribution line turned off.\n",
         "color": 5,
         "width": 560,
         "height": 680
@@ -722,7 +744,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1320,
+        3300,
         400
       ],
       "parameters": {
@@ -737,7 +759,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1040,
+        3020,
         580
       ],
       "parameters": {
@@ -755,7 +777,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        2860,
+        4840,
         400
       ],
       "parameters": {
@@ -795,7 +817,7 @@
       "typeVersion": 2,
       "alwaysOutputData": true,
       "position": [
-        3080,
+        5060,
         400
       ],
       "parameters": {
@@ -810,7 +832,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        3300,
+        5280,
         400
       ],
       "parameters": {
@@ -845,7 +867,7 @@
       "typeVersion": 4.5,
       "onError": "continueRegularOutput",
       "position": [
-        3520,
+        5500,
         300
       ],
       "parameters": {
@@ -880,7 +902,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4400,
+        6380,
         300
       ],
       "parameters": {
@@ -896,7 +918,7 @@
       "typeVersion": 1.1,
       "alwaysOutputData": true,
       "position": [
-        4620,
+        6600,
         300
       ],
       "parameters": {
@@ -931,11 +953,11 @@
       "typeVersion": 2,
       "alwaysOutputData": true,
       "position": [
-        4840,
+        6820,
         400
       ],
       "parameters": {
-        "jsCode": "// Fit score for every candidate lead, recomputed on every scan from the stored Jev\n// judgments and the current config, so a weight change re-ranks leads with no new\n// Jev calls. Code adds the sub-scores Jev doesn't judge:\n//   seniority: 1 for a level in targetSeniority, 0.5 when the posting states no level,\n//              0.2 for any other level (weighted by Jev's probability for each level)\n//   location:  1 for US-remote or a configured metro, 0.5 for \"Location unclear\"\n//   freshness: by the posting's age (the earlier of published and first seen): 1 for a\n//              posting from today, falling to 0 at freshnessWindowDays and staying 0\n//   referral:  0 until referrals exist\n// Each sub-score (0-1) times its weight, scaled so all weights add up to 100, is its\n// points, and the fit score is the sum of the points. A lead can be sent when it is\n// not closed, scored, passed the filters, New, unsent, first seen no more than\n// freshnessWindowDays ago, in one of the role families (Jev's top answer isn't\n// \"None of these\"), and at or above minFitScore. selection_reason records the first of\n// these that held a lead back (\"closed\" for a posting gone from its board), or \"eligible\".\nconst cfg = $('Job Scout config').first().json;\nconst DAY = 24 * 60 * 60 * 1000;\nconst windowDays = Number(cfg.freshnessWindowDays) || 30;\nconst minFit = Number(cfg.minFitScore) || 0;\nconst payFloor = Number(cfg.payFloor) || 0;\nconst target = new Set((cfg.targetSeniority || []).map((s) => String(s).toLowerCase()));\nconst LOCATION = { us_remote: 1, metro: 1, unclear: 0.5 };\nconst DIMENSIONS = ['roleFamily', 'stack', 'seniority', 'location', 'domain', 'freshness', 'referral'];\nconst weights = cfg.weights || {};\nconst totalWeight = DIMENSIONS.reduce((s, d) => s + (Number(weights[d]) || 0), 0) || 1;\nconst round = (n, d = 3) => Math.round(n * 10 ** d) / 10 ** d;\n\n// New judgments from this scan, by row id.\nconst judged = new Map();\nif ($('Read Jev answers').isExecuted) {\n  for (const { json } of $('Read Jev answers').all()) judged.set(json.id, json);\n}\n\nconst NONE = 'None of these';\nconst daysSince = (d) => (Date.now() - new Date(d).getTime()) / DAY;\n// The posting's age, for the freshness sub-score.\nfunction postingAge(lead) {\n  const ages = [lead.published_at, lead.first_seen_at].filter(Boolean).map(daysSince).filter((a) => !isNaN(a));\n  return ages.length ? Math.max(...ages) : 0;\n}\n// Days since Job Scout first saw the lead, for the freshness window.\nconst sinceFirstSeen = (lead) => (lead.first_seen_at ? daysSince(lead.first_seen_at) : 0);\n\nfunction seniorityScore(lead) {\n  let p = {};\n  try {\n    p = JSON.parse(lead.jev_answers || '{}').seniority.p || {};\n  } catch (e) {\n    p = {};\n  }\n  const value = (level) => (target.has(level) ? 1 : level === 'not_stated' ? 0.5 : 0.2);\n  const entries = Object.entries(p);\n  if (!entries.length) return value(lead.seniority_level);\n  return entries.reduce((s, [level, prob]) => s + prob * value(level), 0);\n}\n\nreturn $('Get candidate leads').all().filter((i) => i.json.lead_key).map(({ json: row }) => {\n  const lead = { ...row, ...(judged.get(row.id) || {}) };\n  const age = postingAge(lead);\n  const sub = {\n    roleFamily: lead.sub_role_family,\n    stack: lead.sub_stack,\n    seniority: seniorityScore(lead),\n    location: LOCATION[lead.location_basis] ?? 0,\n    domain: lead.sub_domain,\n    freshness: Math.max(0, 1 - age / windowDays),\n    referral: 0,\n  };\n\n  // Pay stated only in the description: Jev picked the span, code checks the floor.\n  let filterResult = lead.filter_result;\n  if (lead.pay_min == null && lead.pay_max == null && typeof lead.pay_extracted_max === 'number' &&\n      lead.pay_extracted_max < payFloor) {\n    filterResult = 'pay_floor';\n  }\n\n  const scored = lead.scoring_state === 'scored';\n  let points = null;\n  let fit = null;\n  if (scored) {\n    points = {};\n    for (const d of DIMENSIONS) points[d] = Math.round((100 * (Number(weights[d]) || 0) * (sub[d] || 0)) / totalWeight);\n    fit = DIMENSIONS.reduce((s, d) => s + points[d], 0);\n  }\n\n  let reason = 'eligible';\n  if (lead.closed_at) reason = 'closed';\n  else if (!scored) reason = 'unscored';\n  else if (filterResult !== 'passed') reason = filterResult;\n  else if (lead.role_family === NONE) reason = 'no_role_family';\n  else if (sinceFirstSeen(lead) > windowDays) reason = 'window_passed';\n  else if (fit < minFit) reason = 'below_min_fit';\n  const eligible = reason === 'eligible' && lead.status === 'new' && !lead.sent_at && !lead.closed_at;\n  return {\n    json: {\n      ...lead,\n      filter_result: filterResult,\n      sub_seniority: round(sub.seniority),\n      sub_location: sub.location,\n      sub_freshness: round(sub.freshness),\n      sub_referral: sub.referral,\n      fit_score: fit,\n      points,\n      selection_reason: reason,\n      eligible,\n    },\n  };\n});\n",
+        "jsCode": "// Fit score for every candidate lead, recomputed on every scan from the stored Jev\n// judgments and the current config, so a weight change re-ranks leads with no new\n// Jev calls. Code adds the sub-scores Jev doesn't judge:\n//   seniority: 1 for a level in targetSeniority, 0.5 when the posting states no level,\n//              0.2 for any other level (weighted by Jev's probability for each level)\n//   location:  1 for US-remote or a configured metro, 0.5 for \"Location unclear\"\n//   freshness: by the posting's age (the earlier of published and first seen): 1 for a\n//              posting from today, falling to 0 at freshnessWindowDays and staying 0\n//   referral:  1 when the lead's company is in the referrals table (the Referral\n//              button), else 0\n// Each sub-score (0-1) times its weight, scaled so all weights add up to 100, is its\n// points, and the fit score is the sum of the points. A lead can be sent when it is\n// not closed, scored, passed the filters, New, unsent, first seen no more than\n// freshnessWindowDays ago, in one of the role families (Jev's top answer isn't\n// \"None of these\"), and at or above minFitScore. selection_reason records the first of\n// these that held a lead back (\"closed\" for a posting gone from its board), or \"eligible\".\nconst cfg = $('Job Scout config').first().json;\nconst DAY = 24 * 60 * 60 * 1000;\nconst windowDays = Number(cfg.freshnessWindowDays) || 30;\nconst minFit = Number(cfg.minFitScore) || 0;\nconst payFloor = Number(cfg.payFloor) || 0;\nconst target = new Set((cfg.targetSeniority || []).map((s) => String(s).toLowerCase()));\nconst LOCATION = { us_remote: 1, metro: 1, unclear: 0.5 };\nconst DIMENSIONS = ['roleFamily', 'stack', 'seniority', 'location', 'domain', 'freshness', 'referral'];\nconst weights = cfg.weights || {};\nconst totalWeight = DIMENSIONS.reduce((s, d) => s + (Number(weights[d]) || 0), 0) || 1;\nconst round = (n, d = 3) => Math.round(n * 10 ** d) / 10 ** d;\n// A company's key: its name in lower case with only letters and digits, so \"PostHog\"\n// and \"posthog\" match.\nconst companyKey = (name) => String(name || '').toLowerCase().replace(/[^\\p{L}\\p{N}]/gu, '');\nconst referred = new Set($('Get referrals').all().map((i) => i.json.company_key).filter(Boolean));\n\n// New judgments from this scan, by row id.\nconst judged = new Map();\nif ($('Read Jev answers').isExecuted) {\n  for (const { json } of $('Read Jev answers').all()) judged.set(json.id, json);\n}\n\nconst NONE = 'None of these';\nconst daysSince = (d) => (Date.now() - new Date(d).getTime()) / DAY;\n// The posting's age, for the freshness sub-score.\nfunction postingAge(lead) {\n  const ages = [lead.published_at, lead.first_seen_at].filter(Boolean).map(daysSince).filter((a) => !isNaN(a));\n  return ages.length ? Math.max(...ages) : 0;\n}\n// Days since Job Scout first saw the lead, for the freshness window.\nconst sinceFirstSeen = (lead) => (lead.first_seen_at ? daysSince(lead.first_seen_at) : 0);\n\nfunction seniorityScore(lead) {\n  let p = {};\n  try {\n    p = JSON.parse(lead.jev_answers || '{}').seniority.p || {};\n  } catch (e) {\n    p = {};\n  }\n  const value = (level) => (target.has(level) ? 1 : level === 'not_stated' ? 0.5 : 0.2);\n  const entries = Object.entries(p);\n  if (!entries.length) return value(lead.seniority_level);\n  return entries.reduce((s, [level, prob]) => s + prob * value(level), 0);\n}\n\nreturn $('Get candidate leads').all().filter((i) => i.json.lead_key).map(({ json: row }) => {\n  const lead = { ...row, ...(judged.get(row.id) || {}) };\n  const age = postingAge(lead);\n  const sub = {\n    roleFamily: lead.sub_role_family,\n    stack: lead.sub_stack,\n    seniority: seniorityScore(lead),\n    location: LOCATION[lead.location_basis] ?? 0,\n    domain: lead.sub_domain,\n    freshness: Math.max(0, 1 - age / windowDays),\n    referral: referred.has(companyKey(lead.company)) ? 1 : 0,\n  };\n\n  // Pay stated only in the description: Jev picked the span, code checks the floor.\n  let filterResult = lead.filter_result;\n  if (lead.pay_min == null && lead.pay_max == null && typeof lead.pay_extracted_max === 'number' &&\n      lead.pay_extracted_max < payFloor) {\n    filterResult = 'pay_floor';\n  }\n\n  const scored = lead.scoring_state === 'scored';\n  let points = null;\n  let fit = null;\n  if (scored) {\n    points = {};\n    for (const d of DIMENSIONS) points[d] = Math.round((100 * (Number(weights[d]) || 0) * (sub[d] || 0)) / totalWeight);\n    fit = DIMENSIONS.reduce((s, d) => s + points[d], 0);\n  }\n\n  let reason = 'eligible';\n  if (lead.closed_at) reason = 'closed';\n  else if (!scored) reason = 'unscored';\n  else if (filterResult !== 'passed') reason = filterResult;\n  else if (lead.role_family === NONE) reason = 'no_role_family';\n  else if (sinceFirstSeen(lead) > windowDays) reason = 'window_passed';\n  else if (fit < minFit) reason = 'below_min_fit';\n  const eligible = reason === 'eligible' && lead.status === 'new' && !lead.sent_at && !lead.closed_at;\n  return {\n    json: {\n      ...lead,\n      filter_result: filterResult,\n      sub_seniority: round(sub.seniority),\n      sub_location: sub.location,\n      sub_freshness: round(sub.freshness),\n      sub_referral: sub.referral,\n      fit_score: fit,\n      points,\n      selection_reason: reason,\n      eligible,\n    },\n  };\n});\n",
         "mode": "runOnceForAllItems",
         "language": "javaScript"
       }
@@ -947,7 +969,7 @@
       "typeVersion": 1.1,
       "alwaysOutputData": true,
       "position": [
-        5060,
+        7040,
         400
       ],
       "parameters": {
@@ -1056,7 +1078,7 @@
       "typeVersion": 2,
       "alwaysOutputData": true,
       "position": [
-        5280,
+        7260,
         400
       ],
       "parameters": {
@@ -1075,7 +1097,7 @@
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput",
       "position": [
-        5720,
+        7700,
         400
       ],
       "parameters": {
@@ -1115,7 +1137,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        3060,
+        5040,
         600
       ],
       "parameters": {
@@ -1131,7 +1153,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        660,
+        2640,
         400
       ],
       "parameters": {
@@ -1150,7 +1172,7 @@
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput",
       "position": [
-        880,
+        2860,
         400
       ],
       "parameters": {
@@ -1174,7 +1196,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        1980,
+        3960,
         400
       ],
       "parameters": {
@@ -1204,7 +1226,7 @@
       "typeVersion": 2,
       "alwaysOutputData": true,
       "position": [
-        2200,
+        4180,
         400
       ],
       "parameters": {
@@ -1219,7 +1241,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        2420,
+        4400,
         400
       ],
       "parameters": {
@@ -1254,7 +1276,7 @@
       "typeVersion": 1.1,
       "alwaysOutputData": true,
       "position": [
-        2640,
+        4620,
         260
       ],
       "parameters": {
@@ -1302,7 +1324,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1940,
+        3920,
         580
       ],
       "parameters": {
@@ -1318,7 +1340,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        3740,
+        5720,
         300
       ],
       "parameters": {
@@ -1352,7 +1374,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3960,
+        5940,
         160
       ],
       "parameters": {
@@ -1371,7 +1393,7 @@
       "waitBetweenTries": 5000,
       "onError": "continueRegularOutput",
       "position": [
-        4180,
+        6160,
         160
       ],
       "parameters": {
@@ -1406,7 +1428,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        5500,
+        7480,
         400
       ],
       "parameters": {
@@ -1463,6 +1485,7 @@
     {
       "id": "be55ce00-c181-41b1-beaf-e15bbcf3ea72",
       "name": "Send crash alert",
+      "webhookId": "518ff511-4b2f-4641-a481-b3a9c3bf64a0",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "retryOnFail": true,
@@ -1489,8 +1512,7 @@
           "id": "dNZCpYwwJdLFeymL",
           "name": "Job Scout bot"
         }
-      },
-      "webhookId": "518ff511-4b2f-4641-a481-b3a9c3bf64a0"
+      }
     },
     {
       "id": "32ce2477-c9f9-410a-95a7-9d40059bb89f",
@@ -1505,6 +1527,938 @@
         "content": "## Crash alert\n\nIf a scan fails, **Scan crashed** runs and **Send crash alert** sends \"Job Scout scan failed at <step>: <error>\" to the chat in **Job Scout config**, with a link to the failed execution.\n\n- **Nothing to hook up after import.** Importing a template drops workflow settings, so this doesn't use one: when a workflow has an Error Trigger and no error workflow is chosen in its settings, n8n runs that workflow's own Error Trigger when one of its runs fails. Leave **Settings → Error workflow** empty (or pick this workflow). Picking another workflow there sends the alert to that one instead.\n- It fires for published runs only (the daily schedule), not when you click Execute in the editor, and it runs the published version.\n- Pick your Telegram credential on **Send crash alert**.\n- The chat ID is read from **telegramChatId** in **Job Scout config** without running that node, so keep that field a plain value, not an expression.\n- If no board could be fetched at all, the scan fails at **Normalize postings** on purpose, so you get this alert instead of an empty day.",
         "width": 720,
         "height": 520
+      }
+    },
+    {
+      "id": "2fc0be76-ee57-43a3-bc61-66a75bbc90d6",
+      "name": "Applied link",
+      "webhookId": "00ed2d80-2c63-40c1-bd3f-93cbf52beff3",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -280,
+        220
+      ],
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "job-scout/applied",
+        "responseMode": "responseNode",
+        "options": {
+          "ignoreBots": true
+        }
+      }
+    },
+    {
+      "id": "56709a2d-42af-4b61-96c9-edadf4a1f8f9",
+      "name": "Referral link",
+      "webhookId": "eb311caa-67dd-4fac-95f2-d54fc4775ccd",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -280,
+        580
+      ],
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "job-scout/referral",
+        "responseMode": "responseNode",
+        "options": {
+          "ignoreBots": true
+        }
+      }
+    },
+    {
+      "id": "e6426b2e-87b3-4d9f-8ebc-5f001eb61912",
+      "name": "Create state table if missing",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        400
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "={{ $('Job Scout config').first().json.tablePrefix }}state",
+        "columns": {
+          "column": [
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      }
+    },
+    {
+      "id": "47dd862c-d7b6-4f29-ad2f-43c84fb03333",
+      "name": "Create referrals table if missing",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        400
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "={{ $('Job Scout config').first().json.tablePrefix }}referrals",
+        "columns": {
+          "column": [
+            {
+              "name": "company_key",
+              "type": "string"
+            },
+            {
+              "name": "company",
+              "type": "string"
+            },
+            {
+              "name": "lead_key",
+              "type": "string"
+            },
+            {
+              "name": "set_at",
+              "type": "date"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      }
+    },
+    {
+      "id": "8d334ac1-87f4-4c02-a067-ce9c77bada5f",
+      "name": "Get referrals",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "position": [
+        1100,
+        400
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}referrals"
+        },
+        "returnAll": true
+      }
+    },
+    {
+      "id": "306496cd-5ec4-47ea-b1eb-ae1cef72560f",
+      "name": "Get signing secret",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "position": [
+        1320,
+        400
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}state"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "condition": "eq",
+              "keyValue": "signing_secret"
+            }
+          ]
+        },
+        "limit": 1,
+        "orderBy": true,
+        "orderByColumn": "id",
+        "orderByDirection": "ASC"
+      }
+    },
+    {
+      "id": "e57edb50-ee8c-4428-b4df-b5753fe51d0b",
+      "name": "Has signing secret?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1540,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-secret",
+              "leftValue": "={{ $json.value }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b7c4ec52-2c74-439b-aedc-a7abbad73448",
+      "name": "Generate signing secret",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        560
+      ],
+      "parameters": {
+        "action": "generate",
+        "dataPropertyName": "value",
+        "encodingType": "hex",
+        "stringLength": 64
+      }
+    },
+    {
+      "id": "f9a3b611-a910-455b-80e5-ae878395f6b9",
+      "name": "Save signing secret",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1980,
+        560
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}state"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "key": "signing_secret",
+            "value": "={{ $json.value }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "key",
+              "displayName": "key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "value",
+              "displayName": "value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ccaae6d6-2820-4e8f-840d-2aba5bdc9660",
+      "name": "Signing secret",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2200,
+        400
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f3e36548-8025-4c39-adb8-c6c3c1f8efe4",
+              "name": "secret",
+              "value": "={{ $json.value }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "933eb9f2-8bb0-4a7b-b528-116fc74d3d2d",
+      "name": "Route by trigger",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2420,
+        400
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "renameOutput": true,
+              "outputKey": "Daily scan",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "b3b68544-63f5-4070-811a-6ba49eec510a",
+                    "leftValue": "={{ $('Daily scan').isExecuted }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "Applied",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "f5b14282-5bfc-4c19-918e-42c73d698eb0",
+                    "leftValue": "={{ $('Applied link').isExecuted }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "Referral",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4396b015-9bfb-455c-a5d2-c51de189bc0c",
+                    "leftValue": "={{ $('Referral link').isExecuted }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ad7b081a-6418-4341-a8ee-e85e00f5c5b0",
+      "name": "Build page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5120,
+        1650
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The page an action link opens: a heading and a few lines (already HTML-escaped).\n// n8n serves webhook HTML in a sandbox (a CSP without allow-same-origin); a static page\n// like this one doesn't notice.\nconst r = $input.first().json;\nconst html = '<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">' +\n  '<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Job Scout</title><style>' +\n  ':root{color-scheme:light dark;--bg:#f6f6f3;--fg:#1c1c1a;--muted:#5d5d58}' +\n  '@media (prefers-color-scheme:dark){:root{--bg:#161615;--fg:#ededea;--muted:#a3a39e}}' +\n  'body{margin:0;padding:40px 16px;background:var(--bg);color:var(--fg);' +\n  'font:16px/1.5 system-ui,-apple-system,\"Segoe UI\",sans-serif}' +\n  'main{max-width:480px;margin:0 auto}h1{font-size:22px;margin:0 0 12px}p{margin:0 0 8px}' +\n  'small{color:var(--muted)}</style></head><body><main>' +\n  '<h1>' + r.heading + '</h1>' + (r.lines || []).filter(Boolean).map((l) => '<p>' + l + '</p>').join('') +\n  '<p><small>Job Scout</small></p></main></body></html>';\nreturn [{ json: { http_status: r.http_status || 200, heading: r.heading, html } }];\n"
+      }
+    },
+    {
+      "id": "c8a90691-66d9-4df9-86ed-a7286e72b483",
+      "name": "Show page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        5340,
+        1650
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": "={{ $json.http_status }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "3a14d467-6d78-4ec7-baab-c876c22f9c2b",
+      "name": "Get lead for Applied",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "position": [
+        3140,
+        1500
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lead_key",
+              "condition": "eq",
+              "keyValue": "={{ $('Applied link').first().json.query.lead || '' }}"
+            }
+          ]
+        },
+        "limit": 1
+      }
+    },
+    {
+      "id": "1ff8e1c5-633e-4f2b-8a7e-8d3145a22497",
+      "name": "Check Applied link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        1500
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Applied: the job seeker has applied. Nothing changes unless the link's signature\n// matches. A New or Picked lead becomes Applied with today's date, so it is never sent\n// again; a second tap changes nothing. A Passed lead stays Passed.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n// The page's heading and lines; lines are HTML, so posting text is escaped.\nconst page = (http_status, heading, lines, extra = {}) => [{ json: { http_status, heading, lines, ...extra } }];\n\n// ---- Signed action links (the same block is in Build lead messages, Check Applied link\n// and Check Referral link). A link's signature is HMAC-SHA256 of \"<action>:<lead key>\"\n// with the signing secret, as hex, cut to 32 characters (128 bits). HMAC-SHA256 is\n// written out here because the Code node can't load Node's crypto module unless the\n// instance allows it (NODE_FUNCTION_ALLOW_BUILTIN), and the Crypto node's HMAC reads\n// its secret from a credential.\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n];\nconst rotr = (x, n) => (x >>> n) | (x << (32 - n));\nconst utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));\nfunction sha256(input) {\n  const bytes = input.slice();\n  const bits = input.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (8 * i)) & 0xff);\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let t = 0; t < 16; t++) {\n      const j = off + 4 * t;\n      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;\n    }\n    for (let t = 16; t < 64; t++) {\n      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);\n      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);\n      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;\n    }\n    let [a, b, c, d, e, f, g, h] = H;\n    for (let t = 0; t < 64; t++) {\n      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) >>> 0;\n      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });\n  }\n  return H.flatMap((x) => [x >>> 24, (x >>> 16) & 0xff, (x >>> 8) & 0xff, x & 0xff]);\n}\nfunction hmacSha256Hex(key, message) {\n  let k = utf8(key);\n  if (k.length > 64) k = sha256(k);\n  while (k.length < 64) k.push(0);\n  const inner = sha256(k.map((x) => x ^ 0x36).concat(utf8(message)));\n  return sha256(k.map((x) => x ^ 0x5c).concat(inner)).map((x) => x.toString(16).padStart(2, '0')).join('');\n}\nconst sign = (action, leadKey, secret) => hmacSha256Hex(secret, action + ':' + leadKey).slice(0, 32);\n// Compares every character, so the time taken doesn't show how much of a guess was right.\nfunction sameSignature(given, expected) {\n  const a = String(given || '');\n  let diff = a.length ^ expected.length;\n  for (let i = 0; i < expected.length; i++) diff |= (a.charCodeAt(i) || 0) ^ expected.charCodeAt(i);\n  return diff === 0;\n}\n// ---- end of signed action links\n\nconst query = $('Applied link').first().json.query || {};\nconst key = String(query.lead || '');\nconst secret = $('Signing secret').first().json.secret;\nif (!key || !secret || !sameSignature(query.sig, sign('applied', key, secret))) {\n  return page(403, 'Invalid link', ['This link is not valid, so nothing was changed.']);\n}\nconst lead = $input.first().json;\nif (!lead.id || lead.lead_key !== key) return page(404, 'Lead not found', ['Nothing was changed.']);\nconst what = '<b>' + esc(lead.title) + '</b> at ' + esc(lead.company);\nif (lead.status === 'applied') {\n  const on = lead.applied_at ? ' on ' + String(lead.applied_at).slice(0, 10) : '';\n  return page(200, 'Already marked applied', [what, 'Marked applied' + on + '. Nothing was changed.']);\n}\nif (lead.status !== 'new' && lead.status !== 'picked') {\n  return page(409, 'Not changed', [what, 'Applied works for New or Picked leads. This lead is ' +\n    esc(lead.status || 'not set') + '.']);\n}\nreturn page(200, 'Marked applied', [what, \"Job Scout won't send this lead again.\"],\n  { update: true, row_id: lead.id });\n"
+      }
+    },
+    {
+      "id": "8dc7454e-c537-4d17-81ab-9761015257c2",
+      "name": "Mark applied?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3580,
+        1500
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "mark-applied",
+              "leftValue": "={{ $json.update }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7fb92b9f-8efc-4f7b-92d1-37bded154fab",
+      "name": "Mark applied",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3800,
+        1420
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.row_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "applied",
+            "applied_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "applied_at",
+              "displayName": "applied_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2a7f7d91-0537-45e1-93a5-2368202b5a94",
+      "name": "Applied result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4020,
+        1420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Mark applied outputs the updated row; the page comes from Check Applied link.\nreturn $('Check Applied link').all().map((item) => ({ json: item.json }));\n"
+      }
+    },
+    {
+      "id": "be5c1ed9-cee2-46e1-b1a8-67d94d700de0",
+      "name": "Get lead for Referral",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "position": [
+        3140,
+        1800
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lead_key",
+              "condition": "eq",
+              "keyValue": "={{ $('Referral link').first().json.query.lead || '' }}"
+            }
+          ]
+        },
+        "limit": 1
+      }
+    },
+    {
+      "id": "bc4dc2c3-7d95-479d-a302-b5b59a251e3b",
+      "name": "Check Referral link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        1800
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Referral: the job seeker has someone at the lead's company who can refer them. It is a\n// flag on the company, saved in the referrals table by company key. Nothing changes\n// unless the link's signature matches. A second tap for the same company changes nothing.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n// The page's heading and lines; lines are HTML, so posting text is escaped.\nconst cfg = $('Job Scout config').first().json;\nconst weights = cfg.weights || {};\nconst DIMENSIONS = ['roleFamily', 'stack', 'seniority', 'location', 'domain', 'freshness', 'referral'];\nconst totalWeight = DIMENSIONS.reduce((s, d) => s + (Number(weights[d]) || 0), 0) || 1;\n// Points for a referral sub-score, rounded as Score and select rounds them.\nconst referralPoints = (sub) => Math.round((100 * (Number(weights.referral) || 0) * (Number(sub) || 0)) / totalWeight);\nconst page = (http_status, heading, lines, extra = {}) => [{ json: { http_status, heading, lines, ...extra } }];\n// A company's key: its name in lower case with only letters and digits, so \"PostHog\"\n// and \"posthog\" match.\nconst companyKey = (name) => String(name || '').toLowerCase().replace(/[^\\p{L}\\p{N}]/gu, '');\n\n// ---- Signed action links (the same block is in Build lead messages, Check Applied link\n// and Check Referral link). A link's signature is HMAC-SHA256 of \"<action>:<lead key>\"\n// with the signing secret, as hex, cut to 32 characters (128 bits). HMAC-SHA256 is\n// written out here because the Code node can't load Node's crypto module unless the\n// instance allows it (NODE_FUNCTION_ALLOW_BUILTIN), and the Crypto node's HMAC reads\n// its secret from a credential.\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n];\nconst rotr = (x, n) => (x >>> n) | (x << (32 - n));\nconst utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));\nfunction sha256(input) {\n  const bytes = input.slice();\n  const bits = input.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (8 * i)) & 0xff);\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let t = 0; t < 16; t++) {\n      const j = off + 4 * t;\n      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;\n    }\n    for (let t = 16; t < 64; t++) {\n      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);\n      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);\n      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;\n    }\n    let [a, b, c, d, e, f, g, h] = H;\n    for (let t = 0; t < 64; t++) {\n      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) >>> 0;\n      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });\n  }\n  return H.flatMap((x) => [x >>> 24, (x >>> 16) & 0xff, (x >>> 8) & 0xff, x & 0xff]);\n}\nfunction hmacSha256Hex(key, message) {\n  let k = utf8(key);\n  if (k.length > 64) k = sha256(k);\n  while (k.length < 64) k.push(0);\n  const inner = sha256(k.map((x) => x ^ 0x36).concat(utf8(message)));\n  return sha256(k.map((x) => x ^ 0x5c).concat(inner)).map((x) => x.toString(16).padStart(2, '0')).join('');\n}\nconst sign = (action, leadKey, secret) => hmacSha256Hex(secret, action + ':' + leadKey).slice(0, 32);\n// Compares every character, so the time taken doesn't show how much of a guess was right.\nfunction sameSignature(given, expected) {\n  const a = String(given || '');\n  let diff = a.length ^ expected.length;\n  for (let i = 0; i < expected.length; i++) diff |= (a.charCodeAt(i) || 0) ^ expected.charCodeAt(i);\n  return diff === 0;\n}\n// ---- end of signed action links\n\nconst query = $('Referral link').first().json.query || {};\nconst key = String(query.lead || '');\nconst secret = $('Signing secret').first().json.secret;\nif (!key || !secret || !sameSignature(query.sig, sign('referral', key, secret))) {\n  return page(403, 'Invalid link', ['This link is not valid, so nothing was changed.']);\n}\nconst lead = $input.first().json;\nif (!lead.id || lead.lead_key !== key) return page(404, 'Lead not found', ['Nothing was changed.']);\nconst company_key = companyKey(lead.company);\nif (!company_key) return page(409, 'Not changed', ['This lead has no company name.']);\nconst existing = $('Get referrals').all().map((i) => i.json).find((r) => r.company_key === company_key);\nif (existing) {\n  return page(200, 'Referral already saved', ['<b>' + esc(existing.company) + '</b>',\n    'Saved on ' + String(existing.set_at).slice(0, 10) + '. Every lead from ' + esc(existing.company) +\n    ' already gets the referral points (+' + referralPoints(1) + '). Nothing was changed.']);\n}\nreturn [{ json: { save: true, company_key, company: lead.company, lead_key: lead.lead_key, set_at: $now.toISO() } }];\n"
+      }
+    },
+    {
+      "id": "d54a91a2-5d2f-4c95-80c3-80599020f494",
+      "name": "Save referral?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3580,
+        1800
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "save-referral",
+              "leftValue": "={{ $json.save }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1058ca7-d552-4534-9684-0d7c0c133759",
+      "name": "Save referral",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3800,
+        1720
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}referrals"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "company_key",
+              "condition": "eq",
+              "keyValue": "={{ $json.company_key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "company_key": "={{ $json.company_key }}",
+            "company": "={{ $json.company }}",
+            "lead_key": "={{ $json.lead_key }}",
+            "set_at": "={{ $json.set_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "company_key",
+              "displayName": "company_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_key",
+              "displayName": "lead_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "set_at",
+              "displayName": "set_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "9200a17f-fdbf-40a8-8fe7-ec73ae26ac5a",
+      "name": "Get unsent leads",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "position": [
+        4020,
+        1720
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "sent_at",
+              "condition": "isEmpty"
+            }
+          ]
+        },
+        "returnAll": true
+      }
+    },
+    {
+      "id": "fff3ec71-85a7-4470-a526-ec8b6528583b",
+      "name": "Rescore company leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "alwaysOutputData": true,
+      "position": [
+        4240,
+        1720
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The company's unsent leads get the referral sub-score now, with no Jev calls: the fit\n// score swaps the old referral points for the full ones. A scored lead held back only by\n// minFitScore becomes eligible if it now reaches it. The next scan recomputes all of this\n// from the referrals table anyway.\n// A company's key: its name in lower case with only letters and digits, so \"PostHog\"\n// and \"posthog\" match.\nconst companyKey = (name) => String(name || '').toLowerCase().replace(/[^\\p{L}\\p{N}]/gu, '');\nconst cfg = $('Job Scout config').first().json;\nconst weights = cfg.weights || {};\nconst DIMENSIONS = ['roleFamily', 'stack', 'seniority', 'location', 'domain', 'freshness', 'referral'];\nconst totalWeight = DIMENSIONS.reduce((s, d) => s + (Number(weights[d]) || 0), 0) || 1;\n// Points for a referral sub-score, rounded as Score and select rounds them.\nconst referralPoints = (sub) => Math.round((100 * (Number(weights.referral) || 0) * (Number(sub) || 0)) / totalWeight);\nconst minFit = Number(cfg.minFitScore) || 0;\nconst company = $('Check Referral link').first().json.company_key;\nreturn $input.all().map((i) => i.json)\n  .filter((lead) => lead.id && companyKey(lead.company) === company && Number(lead.sub_referral) !== 1)\n  .map((lead) => {\n    const scored = typeof lead.fit_score === 'number';\n    const fit = scored ? lead.fit_score - referralPoints(lead.sub_referral) + referralPoints(1) : lead.fit_score;\n    let reason = lead.selection_reason;\n    if (scored && (reason === 'below_min_fit' || reason === 'eligible')) {\n      reason = fit >= minFit ? 'eligible' : 'below_min_fit';\n    }\n    return { json: { id: lead.id, lead_key: lead.lead_key, sub_referral: 1, fit_score: fit, selection_reason: reason } };\n  });\n"
+      }
+    },
+    {
+      "id": "982de556-2354-4acb-b991-5849f01cd2fc",
+      "name": "Any leads to rescore?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4460,
+        1720
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-rescore",
+              "leftValue": "={{ $json.lead_key }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "fb5271a3-46e8-4b3f-bc3d-ec6bd4912910",
+      "name": "Save referral points",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4680,
+        1640
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sub_referral": "={{ $json.sub_referral }}",
+            "fit_score": "={{ $json.fit_score }}",
+            "selection_reason": "={{ $json.selection_reason }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sub_referral",
+              "displayName": "sub_referral",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fit_score",
+              "displayName": "fit_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "selection_reason",
+              "displayName": "selection_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "abfb8f39-f716-42da-925c-faec8a3f1d7a",
+      "name": "Referral result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4900,
+        1800
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The page after a referral is saved.\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\nconst cfg = $('Job Scout config').first().json;\nconst weights = cfg.weights || {};\nconst DIMENSIONS = ['roleFamily', 'stack', 'seniority', 'location', 'domain', 'freshness', 'referral'];\nconst totalWeight = DIMENSIONS.reduce((s, d) => s + (Number(weights[d]) || 0), 0) || 1;\n// Points for a referral sub-score, rounded as Score and select rounds them.\nconst referralPoints = (sub) => Math.round((100 * (Number(weights.referral) || 0) * (Number(sub) || 0)) / totalWeight);\nconst r = $('Check Referral link').first().json;\nconst rescored = $('Rescore company leads').all().filter((i) => i.json.lead_key).length;\nconst company = '<b>' + esc(r.company) + '</b>';\nconst lines = [company,\n  'Every current and future lead from ' + esc(r.company) + ' gets the referral points (+' + referralPoints(1) +\n  ') and shows \"Referral available\".'];\nif (rescored) lines.push(rescored + ' unsent ' + (rescored === 1 ? 'lead was' : 'leads were') + ' rescored.');\nreturn [{ json: { http_status: 200, heading: 'Referral saved', lines } }];\n"
+      }
+    },
+    {
+      "id": "8c7c4cce-ee0d-4fca-b314-5938cbb595d3",
+      "name": "Sticky Note setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        640,
+        700
+      ],
+      "parameters": {
+        "content": "## Every run: tables, secret, route\n\nEvery trigger runs **Job Scout config** and this setup, then **Route by trigger** sends the run down its own path: the daily scan, **Applied** or **Referral**.\n\n- The `leads`, `state` and `referrals` tables are created if they don't exist.\n- **Get referrals** reads the companies with a referral, for scoring.\n- **Signing secret**: the key that signs action links. On the first run **Generate signing secret** makes 32 random bytes (hex) and saves them in the `state` table as `signing_secret`. It isn't in the config, the messages or the template.",
+        "width": 760,
+        "height": 380,
+        "color": 7
+      }
+    },
+    {
+      "id": "0a3505a8-41d8-49d6-8ccf-727a52827475",
+      "name": "Sticky Note action links",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2580,
+        1340
+      ],
+      "parameters": {
+        "content": "## Action links: Applied and Referral\n\nEach lead message has **Applied** and **Referral** buttons. They open this workflow's GET webhooks `/webhook/job-scout/applied` and `/webhook/job-scout/referral` with `lead` (the lead key) and `sig` in the query string, and show a short page.\n\n- **Signature:** HMAC-SHA256 of `<action>:<lead key>` with the signing secret, first 32 hex characters. A wrong or missing signature gets \"Invalid link\" (403) and changes nothing. Links don't expire. To revoke every link, delete the `signing_secret` row in `state`; the next run makes a new one.\n- **Applied:** a New or Picked lead becomes `applied` with `applied_at`, and is never sent again. A second tap changes nothing; a Passed lead isn't changed (409).\n- **Referral:** saves the lead's company in `referrals` (key: the name in lower case, letters and digits only). Every current and future lead from that company gets the referral points and shows \"Referral available\". Its unsent leads are rescored at once, with no Jev calls.\n- **URLs** come from n8n itself: `$execution.resumeUrl` is built from the instance's public webhook URL (`WEBHOOK_URL` or `N8N_WEBHOOK_URL`), and the links use n8n's default `webhook/` prefix. Set that URL to an address your phone can reach.\n- **Publish** the workflow: production webhooks answer only while it's published. **Ignore Bots** is on, so link previewers get a 403 and nothing happens.\n- Anyone who can read the `state` table or this workflow's saved executions can make valid links.",
+        "width": 540,
+        "height": 760,
+        "color": 6
       }
     }
   ],
@@ -1535,7 +2489,7 @@
       "main": [
         [
           {
-            "node": "Board list",
+            "node": "Create state table if missing",
             "type": "main",
             "index": 0
           }
@@ -1944,15 +2898,358 @@
           }
         ]
       ]
+    },
+    "Applied link": {
+      "main": [
+        [
+          {
+            "node": "Job Scout config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Referral link": {
+      "main": [
+        [
+          {
+            "node": "Job Scout config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create state table if missing": {
+      "main": [
+        [
+          {
+            "node": "Create referrals table if missing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create referrals table if missing": {
+      "main": [
+        [
+          {
+            "node": "Get referrals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get referrals": {
+      "main": [
+        [
+          {
+            "node": "Get signing secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get signing secret": {
+      "main": [
+        [
+          {
+            "node": "Has signing secret?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has signing secret?": {
+      "main": [
+        [
+          {
+            "node": "Signing secret",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate signing secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate signing secret": {
+      "main": [
+        [
+          {
+            "node": "Save signing secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save signing secret": {
+      "main": [
+        [
+          {
+            "node": "Signing secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signing secret": {
+      "main": [
+        [
+          {
+            "node": "Route by trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by trigger": {
+      "main": [
+        [
+          {
+            "node": "Board list",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get lead for Applied",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get lead for Referral",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build page": {
+      "main": [
+        [
+          {
+            "node": "Show page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get lead for Applied": {
+      "main": [
+        [
+          {
+            "node": "Check Applied link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Applied link": {
+      "main": [
+        [
+          {
+            "node": "Mark applied?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark applied?": {
+      "main": [
+        [
+          {
+            "node": "Mark applied",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark applied": {
+      "main": [
+        [
+          {
+            "node": "Applied result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Applied result": {
+      "main": [
+        [
+          {
+            "node": "Build page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get lead for Referral": {
+      "main": [
+        [
+          {
+            "node": "Check Referral link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Referral link": {
+      "main": [
+        [
+          {
+            "node": "Save referral?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save referral?": {
+      "main": [
+        [
+          {
+            "node": "Save referral",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save referral": {
+      "main": [
+        [
+          {
+            "node": "Get unsent leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get unsent leads": {
+      "main": [
+        [
+          {
+            "node": "Rescore company leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rescore company leads": {
+      "main": [
+        [
+          {
+            "node": "Any leads to rescore?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any leads to rescore?": {
+      "main": [
+        [
+          {
+            "node": "Save referral points",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Referral result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save referral points": {
+      "main": [
+        [
+          {
+            "node": "Referral result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Referral result": {
+      "main": [
+        [
+          {
+            "node": "Build page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "nodeGroups": [
     {
-      "id": "235d8bbf-f0d0-4a6e-baac-d8e3c5cb48b8",
-      "name": "Fetch boards",
-      "description": "Makes sure the leads table exists, fetches each Ashby, Greenhouse and Lever board in the config, and turns each posting into a lead with the same fields.",
+      "id": "5813774a-d031-43cc-9f98-8d6dca8b0cea",
+      "name": "Setup",
+      "description": "Runs for every trigger: creates missing tables, reads the referrals, and reads the signing secret for action links (made on the first run).",
       "nodeIds": [
         "c5017551-8064-481d-9efa-4b624d401c57",
+        "e6426b2e-87b3-4d9f-8ebc-5f001eb61912",
+        "47dd862c-d7b6-4f29-ad2f-43c84fb03333",
+        "8d334ac1-87f4-4c02-a067-ce9c77bada5f",
+        "306496cd-5ec4-47ea-b1eb-ae1cef72560f",
+        "e57edb50-ee8c-4428-b4df-b5753fe51d0b",
+        "b7c4ec52-2c74-439b-aedc-a7abbad73448",
+        "f9a3b611-a910-455b-80e5-ae878395f6b9",
+        "ccaae6d6-2820-4e8f-840d-2aba5bdc9660"
+      ]
+    },
+    {
+      "id": "235d8bbf-f0d0-4a6e-baac-d8e3c5cb48b8",
+      "name": "Fetch boards",
+      "description": "Fetches each Ashby, Greenhouse and Lever board in the config, and turns each posting into a lead with the same fields.",
+      "nodeIds": [
         "5c184a36-6e66-45ca-b112-46d5ff345021",
         "http-fetch-board",
         "13fd8c4d-7163-4b13-a87a-a25d90ebdce6"
@@ -2002,7 +3299,7 @@
     {
       "id": "3d3dc24b-7fc4-410f-8c64-ef698ac5bcab",
       "name": "Send each lead",
-      "description": "Sends one silent message per lead with an Open posting button and saves sent_at and the fit line, one per second.",
+      "description": "Sends one silent message per lead with Open posting, Applied and Referral buttons and saves sent_at and the fit line, one per second.",
       "nodeIds": [
         "879a79a1-b010-47d7-a997-f42c41880ddb",
         "4180ad9e-c641-4e99-9648-6f84a8570179",

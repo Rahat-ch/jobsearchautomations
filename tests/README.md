@@ -1,6 +1,6 @@
 # Job Scout tests
 
-The tests run the Job Scout workflow's **Daily scan** trigger through n8n's instance-level MCP `test_workflow` tool, with pinned data in place of the outside world:
+The tests run the Job Scout workflow's **Daily scan** trigger, and its **Applied link** and **Referral link** webhook triggers, through n8n's instance-level MCP `test_workflow` tool, with pinned data in place of the outside world:
 
 - **Job Scout config** is pinned to the node's own defaults (so the filter rules, weights and thresholds under test are the shipped ones), with the boards the case scans (one Ashby board unless it says otherwise), a fake chat ID and the table prefix `jobscout_test_`. A case can override a field, such as `payFloor`, `weights` or `profileSummary`.
 - **Fetch board** is pinned to one full response per board, in the order **Board list** builds them (Ashby, then Greenhouse, then Lever): `fixtures/ashby-n8n.json` (board `n8n`), `fixtures/ashby-filters.json` (`testco`), `fixtures/ashby-scoring.json` (`scoreco`), `fixtures/greenhouse-instacart.json` (`instacart`), `fixtures/lever-spotify.json` (`spotify`), `fixtures/greenhouse-filters.json` (`ghco`) or `fixtures/lever-filters.json` (`leverco`). A board can instead be pinned to a failed fetch (an `error` item, as the node returns with "continue on error"). The runner moves each posting's publish date (Ashby `publishedAt`, Greenhouse `first_published`, Lever `createdAt`) to whole days before now, keeping the gaps between postings, so the freshness window and freshness points don't change as the recorded dates age.
@@ -9,9 +9,11 @@ The tests run the Job Scout workflow's **Daily scan** trigger through n8n's inst
 - **Write fit line** (Claude) is pinned to fixed fit lines, in send order, or to a failed reply (`FIT_FAIL`).
 - **Send header**, **Send lead message** and **Send crash alert** are pinned to fake Telegram replies, so nothing is sent.
 
-Every other node runs for real, including the Data Table nodes, which write to `jobscout_test_leads`. Each case clears the `jobscout_test_` tables first and again at the end.
+- **Applied link** and **Referral link** are pinned to a GET request (`{headers, params, query, body}`) whose query holds `lead` and `sig`, as a tap on a lead message's button sends it.
 
-The cases check only external behavior: rows in the test table, and the items that reach the Jev, Claude and Telegram nodes. Two cases also check that those nodes send what they receive (Telegram: text, sound, HTML parse mode, no attribution, the Open posting button; Jev: the endpoint, Bearer credential, that **Ask Jev again** sends the same request with retries, and the request body; Claude: the model, credential and a prompt that forbids invented facts), because pinned nodes don't evaluate their own parameters. Another reads the config node's defaults and its sticky note, to check them against the spec.
+Every other node runs for real, including the Data Table nodes, which write to `jobscout_test_leads`, `jobscout_test_state` (the signing secret) and `jobscout_test_referrals`. Each case clears the `jobscout_test_` tables first and again at the end, so each case's first run makes a new signing secret.
+
+The cases check only external behavior: rows in the test table, and the items that reach the Jev, Claude and Telegram nodes. Two cases also check that those nodes send what they receive (Telegram: text, sound, HTML parse mode, no attribution, the Open posting button on the first row and the Applied and Referral buttons on the second; Jev: the endpoint, Bearer credential, that **Ask Jev again** sends the same request with retries, and the request body; Claude: the model, credential and a prompt that forbids invented facts), because pinned nodes don't evaluate their own parameters. Another reads the config node's defaults and its sticky note, to check them against the spec.
 
 Resilience (issue #10):
 
@@ -20,6 +22,15 @@ Resilience (issue #10):
 - A scan with nothing to send produces one silent "Job Scout: no new leads today" message with the scanned, filtered and unscored counts: when every posting is filtered, when nothing reaches the minimum (a salary found in the description below the floor counts as filtered), and when Jev fails for a lead. The quiet scans in other cases check it too.
 - When every board's fetch fails, the scan stops at **Normalize postings** with "No board could be fetched".
 - The crash alert path runs from its Error Trigger (**Scan crashed**) with pinned error data in the shape n8n produced for a real failed scan, and the case checks the alert text, HTML escaping, the step name, and that **Send crash alert** reads the chat ID from the config node.
+
+Action links (issue #12):
+
+- Every case that checks lead messages also checks their **Applied** and **Referral** links: the path on the instance's public webhook base (`N8N_WEBHOOK_URL` in `.env`, compared without printing it), the lead key, and a signature the runner computes itself with Python's `hmac` from the secret in `jobscout_test_state`. The secret must not appear in any message.
+- The first run makes the secret (64 hex characters) and later runs reuse it.
+- Applied from a lead message marks a New lead `applied` with `applied_at`; a second tap answers "Already marked applied" and writes nothing. Picked → Applied works; a Passed lead gets 409 and stays Passed. An Applied lead that would have been next in fit order is never sent.
+- A changed character, a Referral signature on Applied (and the reverse), another lead's signature, a missing or shortened signature all get "Invalid link" (403) and change no row and no referral. A valid signature for an unknown lead gets 404.
+- Referral on a `testco` lead saves `testco` in `jobscout_test_referrals`, raises the fit score of every unsent `testco` lead by the referral points (5) with no Jev call, and moves the two leads that now reach the minimum (66 in this case) to `eligible`; `n8n` leads are unchanged. A second tap changes nothing. On the next scan a new `testco` posting gets the referral points, and every `testco` message has "Referral available" under the company and "referral 5" in the breakdown.
+- A static case checks what pinned nodes can't: both webhooks are GET on fixed paths with "Ignore Bots" on and answer through **Show page** (HTML, with the status the action chose), the three Code nodes that sign use the same code, and the config has no secret field.
 
 The expected filter result for every fixture posting is listed by title in `EXPECTED` in `run_tests.py`. Expected fit scores come from `expected_points`, which works out the fit score from the pinned Jev answers, the location basis, the posting's age and the weights, independently of the workflow's code.
 
@@ -31,7 +42,7 @@ python3 tests/run_tests.py cap      # only cases whose name contains "cap"
 VERBOSE=1 python3 tests/run_tests.py  # show tracebacks for failures
 ```
 
-It exits non-zero if any case fails. A full run takes about 5 minutes, because the workflow waits one second between lead messages and the MCP server allows 100 calls per window. On HTTP 429 the runner waits until the window resets (`X-RateLimit-Reset`) and retries.
+It exits non-zero if any case fails. A full run takes about 9 minutes, because the workflow waits one second between lead messages and the MCP server allows 100 calls per window. On HTTP 429 the runner waits until the window resets (`X-RateLimit-Reset`) and retries.
 
 ## What it needs
 
@@ -54,6 +65,18 @@ n8n runs an error workflow only for published, non-manual runs, so `test_workflo
 4. Unpublish and delete the copy.
 
 Last run 2026-10-01: Telegram returned `ok: true` (message 46) for "[Test] Job Scout scan failed at Board list: Deliberate crash to check the crash alert [line 1]". The first `execute_workflow` call right after `publish_workflow` failed with "no published (active) version"; waiting until the copy showed as active fixed it.
+
+## Manual check: the action links over HTTP
+
+`test_workflow` doesn't send a real request, so the webhooks' HTTP behavior (Ignore Bots, the status code, the sandboxed HTML page) was checked once on a published copy. This sends no Telegram message.
+
+1. Run one scan through `test_workflow` (as the tests do) so `jobscout_test_leads` and `jobscout_test_state` have rows.
+2. Copy Job Scout (public API `POST /workflows`, settings `availableInMCP: true`) with `tablePrefix` `jobscout_test_`, a fake chat ID and **Daily scan** disabled. Job Scout itself must be unpublished, because two workflows can't hold the same webhook path.
+3. Publish the copy with MCP `publish_workflow` and wait until it shows as active.
+4. GET `<public base>webhook/job-scout/applied?lead=<key>&sig=<sig>` and the Referral link, signed with the test secret.
+5. Unpublish the copy, archive it (`archive_workflow`; the public API refuses to delete a workflow that isn't archived) and delete it.
+
+Last run 2026-10-01 through the tunnel: a `TelegramBot (like TwitterBot)` user agent got 403 and the lead stayed New; a wrong signature got 403 "Invalid link"; the signed Applied link got 200 `text/html` with n8n's `Content-Security-Policy: sandbox` header and the lead became Applied; a repeat over localhost got "Already marked applied"; Referral got "Referral saved".
 
 ## Fixtures
 
