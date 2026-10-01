@@ -239,5 +239,5 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 
 ## Still open
 
-- Rahat's profile summary text (drafted at build time).
+- Rahat's profile summary text: drafted from the general resume during issue #9 and set in the live config node only (the export ships a placeholder). Waiting for Rahat's edits.
 - Deferred with the board: webhook-served page or static site, and the login scheme (see `job-scout-board-serving.md`).

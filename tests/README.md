@@ -2,15 +2,17 @@
 
 The tests run the Job Scout workflow's **Daily scan** trigger through n8n's instance-level MCP `test_workflow` tool, with pinned data in place of the outside world:
 
-- **Job Scout config** is pinned to the node's own defaults (so the filter rules under test are the shipped ones), with one board, a fake chat ID and the table prefix `jobscout_test_`. A case can override a field, such as `payFloor`.
-- **Fetch Ashby board** is pinned to `fixtures/ashby-n8n.json` (board `n8n`) or `fixtures/ashby-filters.json` (board `testco`).
+- **Job Scout config** is pinned to the node's own defaults (so the filter rules, weights and thresholds under test are the shipped ones), with one board, a fake chat ID and the table prefix `jobscout_test_`. A case can override a field, such as `payFloor`, `weights` or `profileSummary`.
+- **Fetch Ashby board** is pinned to `fixtures/ashby-n8n.json` (board `n8n`), `fixtures/ashby-filters.json` (board `testco`) or `fixtures/ashby-scoring.json` (board `scoreco`). The runner moves each posting's `publishedAt` to whole days before now, keeping the gaps between postings, so the freshness window and freshness points don't change as the recorded dates age.
+- **Ask Jev** is pinned to one Jev response per lead that should be judged, in the order **Build Jev requests** sends them (by lead key). Each response has the shape of `fixtures/jev-response.json`, a real response recorded 2026-09-30, with the answers for that posting from `JEV` in `run_tests.py`. A case lists the leads it expects Jev to judge, and the runner fails if Jev is asked about any others, so every scan also checks that unchanged leads aren't judged again.
+- **Write fit line** (Claude) is pinned to fixed fit lines, in send order.
 - **Send header** and **Send lead message** are pinned to fake Telegram replies, so nothing is sent.
 
 Every other node runs for real, including the Data Table nodes, which write to `jobscout_test_leads`. Each case clears the `jobscout_test_` tables first and again at the end.
 
-The cases check only external behavior: rows in the test table, and the items that reach the two Telegram nodes. One case also checks that the Telegram nodes send what they receive (text, sound, HTML parse mode, no attribution, the Open posting button), because pinned nodes don't evaluate their own parameters. Another reads the config node's defaults and its sticky note, to check them against the spec.
+The cases check only external behavior: rows in the test table, and the items that reach the Jev, Claude and Telegram nodes. Two cases also check that those nodes send what they receive (Telegram: text, sound, HTML parse mode, no attribution, the Open posting button; Jev: the endpoint, Bearer credential, retries and the request body; Claude: the model, credential and a prompt that forbids invented facts), because pinned nodes don't evaluate their own parameters. Another reads the config node's defaults and its sticky note, to check them against the spec.
 
-The expected filter result for every fixture posting is listed by title in `EXPECTED` in `run_tests.py`.
+The expected filter result for every fixture posting is listed by title in `EXPECTED` in `run_tests.py`. Expected fit scores come from `expected_points`, which works out the fit score from the pinned Jev answers, the location basis, the posting's age and the weights, independently of the workflow's code.
 
 ## Run
 
@@ -20,7 +22,7 @@ python3 tests/run_tests.py cap      # only cases whose name contains "cap"
 VERBOSE=1 python3 tests/run_tests.py  # show tracebacks for failures
 ```
 
-It exits non-zero if any case fails. A full run takes about 40 seconds, because the workflow waits one second between lead messages. The MCP server rate-limits bursts of calls; the runner waits and retries on HTTP 429.
+It exits non-zero if any case fails. A full run takes about 70 seconds, because the workflow waits one second between lead messages. The MCP server rate-limits bursts of calls; the runner waits and retries on HTTP 429.
 
 ## What it needs
 
@@ -31,7 +33,7 @@ It exits non-zero if any case fails. A full run takes about 40 seconds, because 
   - `N8N_MCP_TOKEN`: an instance-level MCP token (used for `test_workflow`, `get_workflow_execution` and `get_data_table_rows`).
 - Python 3.11 or later. Standard library only.
 
-The runner refuses to start if any Telegram or HTTP Request node in the workflow is missing pin data, and it only clears tables whose names start with `jobscout_test_`.
+The runner refuses to start if any Telegram, HTTP Request or Anthropic node in the workflow is missing pin data, so no test calls Jev, Claude, Ashby or Telegram. It only clears tables whose names start with `jobscout_test_`.
 
 ## Fixtures
 
@@ -44,3 +46,9 @@ The runner refuses to start if any Telegram or HTTP Request node in the workflow
 - location edge cases: hybrid in New York with "Remote (US)" only as a secondary location (passes), `Remote (Canada)` and `Remote - Europe` with no address (fail), hybrid in Plano, TX and on-site in Dallas (pass), hybrid and on-site in Austin (fail), and hybrid in Arlington, VA (fails; Arlington, TX would pass)
 - titles that must not be excluded: `Developer Relations Engineer, SDKs & APIs`, `Fintech Product Engineer`, `Software Engineer, Finance Platform` (an `excludedTitleOverrides` word wins), and `Developer Advocate` in the Marketing department
 - pay edge cases: a range that tops out exactly at the floor (passes), and monthly pay ($12.5K a month counts as $150K a year)
+
+`fixtures/ashby-scoring.json` is three synthetic postings (board `scoreco`) for scoring: a Developer Advocate in Marketing whose pay appears only in the description, below the floor (`$150,000 - $170,000 USD`, next to the distractors `$200M` and `$20k-$100k+ ARR`); a Senior Product Engineer whose pay appears only in the description, above the floor (`$190K–$230K`); and a posting 41 days older than the newest, outside the 30-day freshness window.
+
+`fixtures/jev-response.json` is one real Jev (`jev-1.13.0`) response for n8n's Senior Developer Advocate posting, recorded through the workflow on 2026-09-30. The pinned responses reuse its shape and score legends.
+
+The pinned Jev answers in `JEV` are made up to cover the cases: two n8n postings fall below the minimum fit score of 60 (Field Marketing Lead, Senior Partner Manager), every passing `testco` posting clears it, and the fit scores are spread out so the sending order is checked. They test Job Scout's handling of Jev's answers, not Jev's judgment.

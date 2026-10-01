@@ -1,0 +1,76 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "role_family": {
+      "type": "choice",
+      "choice": "DevRel/DevEx",
+      "confidence": 1,
+      "probabilities": {
+        "Product/Frontend Engineering": 0,
+        "None of these": 0,
+        "FDE/Solutions": 0,
+        "DevEx/Product PM": 0,
+        "DevRel/DevEx": 1
+      }
+    },
+    "stack_fit": {
+      "type": "score",
+      "score": 0.95,
+      "confidence": 0.21,
+      "legend": {
+        "0": "None of the languages, frameworks or platforms the job uses are in the candidate's skills",
+        "1": "Only minor tools overlap; the job's main languages and frameworks are different",
+        "2": "Some core technologies overlap, but a main language or framework is different",
+        "3": "Most of the job's core languages and frameworks are in the candidate's skills",
+        "4": "The job's technology is essentially the candidate's skills"
+      },
+      "probabilities": {
+        "0": 0.46,
+        "1": 0.31,
+        "2": 0.1,
+        "3": 0.08,
+        "4": 0.05
+      }
+    },
+    "names_stack": {
+      "type": "noul",
+      "noul": 0.19
+    },
+    "seniority": {
+      "type": "choice",
+      "choice": "senior",
+      "confidence": 1,
+      "probabilities": {
+        "manager": 0,
+        "founding": 0,
+        "intern_junior": 0,
+        "mid": 0,
+        "staff_plus": 0,
+        "not_stated": 0,
+        "senior": 1,
+        "lead": 0
+      }
+    },
+    "domain_fit": {
+      "type": "score",
+      "score": 2.34,
+      "confidence": 0.58,
+      "legend": {
+        "0": "Unrelated to any domain in the candidate's profile",
+        "1": "Loosely related: a different product area, with some transferable context",
+        "2": "Adjacent: a closely related product area or the same kind of users",
+        "3": "The same domain the profile names, such as the same kind of product and users"
+      },
+      "probabilities": {
+        "0": 0,
+        "1": 0.04,
+        "2": 0.58,
+        "3": 0.38
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 2193,
+    "output_tokens": 203
+  }
+}
