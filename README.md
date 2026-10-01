@@ -2,7 +2,7 @@
 
 Job Scout is an n8n workflow that finds job openings every morning, scores each one against your profile, and sends the best matches to Telegram, where you triage them with one tap. It never applies for jobs, contacts anyone, or searches for people.
 
-It is a rebuild of the daily search in my own job-scout agent, and my portfolio piece for n8n's Senior Developer Advocate role.
+It is a rebuild of the daily search in my own job-scout agent.
 
 ## What a run does
 
@@ -68,7 +68,7 @@ Then:
 4. Set the run time on the **Daily scan** trigger.
 5. Publish the workflow. The first run creates its Data Tables and the link-signing secret.
 
-The defaults are my own search: senior DevRel, forward-deployed and product engineering roles, remote in the US or in Dallas–Fort Worth, with a $180K base floor.
+The defaults are my own search: senior DevRel, forward-deployed and product engineering roles, remote in the US or in Dallas–Fort Worth. Change them in the config node.
 
 ## Tests
 
