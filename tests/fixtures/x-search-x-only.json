@@ -1,0 +1,139 @@
+{
+  "data": [
+    {
+      "author_id": "1990000000000000902",
+      "created_at": "2026-09-30T18:00:00.000Z",
+      "edit_history_tweet_ids": [
+        "1990000000000000104"
+      ],
+      "id": "1990000000000000104",
+      "lang": "en",
+      "text": "We're hiring a founding developer relations engineer at Example Startup. Remote US, TypeScript, $190K-$220K plus equity. Reply or DM me with something you've built."
+    },
+    {
+      "author_id": "1990000000000000904",
+      "created_at": "2026-09-30T12:00:00.000Z",
+      "edit_history_tweet_ids": [
+        "1990000000000000103"
+      ],
+      "entities": {
+        "urls": [
+          {
+            "display_url": "pic.x.com/exMedia001",
+            "end": 113,
+            "expanded_url": "https://x.com/example_jobfeed/status/1990000000000000103/photo/1",
+            "media_key": "3_1990000000000000803",
+            "start": 90,
+            "url": "https://t.co/exMedia001"
+          }
+        ]
+      },
+      "id": "1990000000000000103",
+      "lang": "en",
+      "text": "Hiring: Forward Deployed Engineer - Example AI. Remote - United States. Posted 1 day ago. https://t.co/exMedia001"
+    },
+    {
+      "author_id": "1990000000000000905",
+      "created_at": "2026-09-29T16:00:00.000Z",
+      "edit_history_tweet_ids": [
+        "1990000000000000102"
+      ],
+      "entities": {
+        "urls": [
+          {
+            "display_url": "pic.x.com/exMedia002",
+            "end": 149,
+            "expanded_url": "https://x.com/example_technews/status/1990000000000000102/photo/1",
+            "media_key": "3_1990000000000000802",
+            "start": 126,
+            "url": "https://t.co/exMedia002"
+          }
+        ]
+      },
+      "id": "1990000000000000102",
+      "lang": "en",
+      "text": "New report: demand for forward deployed engineers is far above supply, and companies say hiring is taking longer. Full chart: https://t.co/exMedia002"
+    },
+    {
+      "author_id": "1990000000000000904",
+      "created_at": "2026-09-29T09:00:00.000Z",
+      "edit_history_tweet_ids": [
+        "1990000000000000101"
+      ],
+      "entities": {
+        "hashtags": [
+          {
+            "end": 179,
+            "start": 168,
+            "tag": "RemoteJobs"
+          }
+        ],
+        "urls": [
+          {
+            "description": "Example channel.",
+            "display_url": "t.me/example_jobfeed/12345",
+            "end": 125,
+            "expanded_url": "https://t.me/example_jobfeed/12345",
+            "images": [
+              {
+                "height": 630,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=orig",
+                "width": 1200
+              },
+              {
+                "height": 150,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=150x150",
+                "width": 150
+              }
+            ],
+            "start": 102,
+            "status": 200,
+            "title": "Example Job Feed",
+            "unwound_url": "https://t.me/example_jobfeed/12345",
+            "url": "https://t.co/exDigest01"
+          },
+          {
+            "display_url": "twitter.com/example_jobfeed/s…",
+            "end": 167,
+            "expanded_url": "https://twitter.com/example_jobfeed/status/1990000000000000050",
+            "start": 144,
+            "url": "https://t.co/exQuote001"
+          }
+        ]
+      },
+      "id": "1990000000000000101",
+      "lang": "en",
+      "text": "37 fresh remote jobs today: Solutions Engineer - Example Co; Product Manager - Example Labs; and more https://t.co/exDigest01 Yesterday's list: https://t.co/exQuote001 #RemoteJobs"
+    }
+  ],
+  "includes": {
+    "users": [
+      {
+        "description": "Founder and CEO at Example Startup. Building developer tools.",
+        "id": "1990000000000000902",
+        "name": "Example Founder",
+        "username": "example_founder",
+        "verified": false
+      },
+      {
+        "description": "Fresh remote tech jobs every day. Not affiliated with the companies listed.",
+        "id": "1990000000000000904",
+        "name": "Example Job Feed",
+        "username": "example_jobfeed",
+        "verified": false
+      },
+      {
+        "description": "News about AI and the tech job market.",
+        "id": "1990000000000000905",
+        "name": "Example Tech News",
+        "username": "example_technews",
+        "verified": false
+      }
+    ]
+  },
+  "meta": {
+    "newest_id": "1990000000000000104",
+    "oldest_id": "1990000000000000101",
+    "result_count": 4
+  }
+}

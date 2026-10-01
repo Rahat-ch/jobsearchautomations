@@ -1,0 +1,279 @@
+{
+  "data": [
+    {
+      "author_id": "1990000000000000901",
+      "created_at": "2026-10-01T15:00:00.000Z",
+      "edit_history_tweet_ids": [
+        "1990000000000000110"
+      ],
+      "entities": {
+        "urls": [
+          {
+            "description": "Example posting description.",
+            "display_url": "jobs.ashbyhq.com/n8n/33e46e4f…",
+            "end": 101,
+            "expanded_url": "https://jobs.ashbyhq.com/n8n/33e46e4f-85b9-49ca-a010-16586c118c50",
+            "images": [
+              {
+                "height": 630,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=orig",
+                "width": 1200
+              },
+              {
+                "height": 150,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=150x150",
+                "width": 150
+              }
+            ],
+            "start": 78,
+            "status": 200,
+            "title": "Senior Developer Advocate, US",
+            "unwound_url": "https://jobs.ashbyhq.com/n8n/33e46e4f-85b9-49ca-a010-16586c118c50",
+            "url": "https://t.co/exAshby001"
+          }
+        ]
+      },
+      "id": "1990000000000000110",
+      "lang": "en",
+      "text": "My team is hiring a Senior Developer Advocate, remote US. Come build with us: https://t.co/exAshby001"
+    },
+    {
+      "author_id": "1990000000000000903",
+      "created_at": "2026-10-01T13:30:00.000Z",
+      "edit_history_tweet_ids": [
+        "1990000000000000109"
+      ],
+      "entities": {
+        "urls": [
+          {
+            "description": "Example posting description.",
+            "display_url": "jobs.lever.co/spotify/65d6cac…",
+            "end": 88,
+            "expanded_url": "https://jobs.lever.co/spotify/65d6caca-6d7c-4049-8256-a128e0e7249e/apply",
+            "images": [
+              {
+                "height": 630,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=orig",
+                "width": 1200
+              },
+              {
+                "height": 150,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=150x150",
+                "width": 150
+              }
+            ],
+            "start": 65,
+            "status": 200,
+            "title": "Backend Engineer - Music",
+            "unwound_url": "https://jobs.lever.co/spotify/65d6caca-6d7c-4049-8256-a128e0e7249e/apply",
+            "url": "https://t.co/exLever001"
+          }
+        ]
+      },
+      "id": "1990000000000000109",
+      "lang": "en",
+      "text": "We are hiring a backend engineer for the music team. Apply here: https://t.co/exLever001"
+    },
+    {
+      "author_id": "1990000000000000906",
+      "created_at": "2026-10-01T11:00:00.000Z",
+      "edit_history_tweet_ids": [
+        "1990000000000000108"
+      ],
+      "entities": {
+        "urls": [
+          {
+            "description": "Example posting description.",
+            "display_url": "job-boards.greenhouse.io/exam…",
+            "end": 110,
+            "expanded_url": "https://job-boards.greenhouse.io/exampleplatform/jobs/9200001",
+            "images": [
+              {
+                "height": 630,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=orig",
+                "width": 1200
+              },
+              {
+                "height": 150,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=150x150",
+                "width": 150
+              }
+            ],
+            "start": 87,
+            "status": 200,
+            "title": "Job Application for Developer Advocate at Example Platform",
+            "unwound_url": "https://job-boards.greenhouse.io/exampleplatform/jobs/9200001",
+            "url": "https://t.co/exGreen001"
+          }
+        ]
+      },
+      "id": "1990000000000000108",
+      "lang": "en",
+      "text": "We're hiring a Developer Advocate on my team at Example Platform. Remote US or Dallas. https://t.co/exGreen001"
+    },
+    {
+      "author_id": "1990000000000000903",
+      "created_at": "2026-10-01T09:45:00.000Z",
+      "edit_history_tweet_ids": [
+        "1990000000000000107"
+      ],
+      "entities": {
+        "urls": [
+          {
+            "description": "Example posting description.",
+            "display_url": "instacart.careers/job/?gh_jid…",
+            "end": 83,
+            "expanded_url": "https://instacart.careers/job/?gh_jid=8053797",
+            "images": [
+              {
+                "height": 630,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=orig",
+                "width": 1200
+              },
+              {
+                "height": 150,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=150x150",
+                "width": 150
+              }
+            ],
+            "start": 60,
+            "status": 200,
+            "title": "Senior Software Engineer II, AI Labs & Foundations",
+            "unwound_url": "https://instacart.careers/job/?gh_jid=8053797",
+            "url": "https://t.co/exGhJid001"
+          }
+        ]
+      },
+      "id": "1990000000000000107",
+      "lang": "en",
+      "text": "Hiring a senior software engineer for our AI team. Details: https://t.co/exGhJid001"
+    },
+    {
+      "author_id": "1990000000000000904",
+      "created_at": "2026-10-01T08:00:00.000Z",
+      "edit_history_tweet_ids": [
+        "1990000000000000106"
+      ],
+      "entities": {
+        "mentions": [
+          {
+            "end": 58,
+            "id": "1990000000000000950",
+            "start": 46,
+            "username": "examplecorp"
+          }
+        ],
+        "urls": [
+          {
+            "description": "Example posting description.",
+            "display_url": "jobs.ashbyhq.com/example.com/…",
+            "end": 110,
+            "expanded_url": "https://jobs.ashbyhq.com/example.com/00000000-0000-4000-8000-0000000000a1?utm_source=examplefeed&utm_medium=social&utm_campaign=post",
+            "images": [
+              {
+                "height": 630,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=orig",
+                "width": 1200
+              },
+              {
+                "height": 150,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=150x150",
+                "width": 150
+              }
+            ],
+            "start": 87,
+            "status": 200,
+            "title": "Senior Product Manager - Developer Platform",
+            "unwound_url": "https://jobs.ashbyhq.com/example.com/00000000-0000-4000-8000-0000000000a1?utm_source=examplefeed&utm_medium=social&utm_campaign=post",
+            "url": "https://t.co/exAshby002"
+          }
+        ]
+      },
+      "id": "1990000000000000106",
+      "lang": "en",
+      "text": "Senior Product Manager, Developer Platform at @examplecorp Location: Remote, US Apply: https://t.co/exAshby002"
+    },
+    {
+      "author_id": "1990000000000000902",
+      "created_at": "2026-09-30T20:00:00.000Z",
+      "edit_history_tweet_ids": [
+        "1990000000000000105"
+      ],
+      "entities": {
+        "urls": [
+          {
+            "description": "Example careers page.",
+            "display_url": "www.example-startup.com/caree…",
+            "end": 77,
+            "expanded_url": "https://www.example-startup.com/careers?ashby_jid=00000000-0000-4000-8000-0000000000a2",
+            "images": [
+              {
+                "height": 630,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=orig",
+                "width": 1200
+              },
+              {
+                "height": 150,
+                "url": "https://pbs.twimg.com/news_img/1990000000000000000/example?format=png&name=150x150",
+                "width": 150
+              }
+            ],
+            "start": 54,
+            "status": 200,
+            "title": "Careers | Example Startup",
+            "unwound_url": "https://www.example-startup.com/careers?ashby_jid=00000000-0000-4000-8000-0000000000a2",
+            "url": "https://t.co/exAshJid01"
+          }
+        ]
+      },
+      "id": "1990000000000000105",
+      "lang": "en",
+      "text": "We're hiring our first solutions engineer. Remote US. https://t.co/exAshJid01"
+    }
+  ],
+  "includes": {
+    "users": [
+      {
+        "description": "Engineer at Example Co. Opinions mine.",
+        "id": "1990000000000000901",
+        "name": "Example Engineer",
+        "username": "example_n8n_engineer",
+        "verified": false
+      },
+      {
+        "description": "Technical recruiter at Example Corp. DMs open for engineering roles.",
+        "id": "1990000000000000903",
+        "name": "Example Recruiter",
+        "username": "example_recruiter",
+        "verified": false
+      },
+      {
+        "description": "Head of Developer Relations at Example Platform.",
+        "id": "1990000000000000906",
+        "name": "Example DevRel Manager",
+        "username": "example_devrel_manager",
+        "verified": false
+      },
+      {
+        "description": "Fresh remote tech jobs every day. Not affiliated with the companies listed.",
+        "id": "1990000000000000904",
+        "name": "Example Job Feed",
+        "username": "example_jobfeed",
+        "verified": false
+      },
+      {
+        "description": "Founder and CEO at Example Startup. Building developer tools.",
+        "id": "1990000000000000902",
+        "name": "Example Founder",
+        "username": "example_founder",
+        "verified": false
+      }
+    ]
+  },
+  "meta": {
+    "newest_id": "1990000000000000110",
+    "next_token": "b26v89c19zqg8o3juzixexamplepagetwotoken000001",
+    "oldest_id": "1990000000000000105",
+    "result_count": 6
+  }
+}
