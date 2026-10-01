@@ -957,6 +957,8 @@ def case_config_defaults_match_spec(wf):
     assert all(f["titleKeywords"] and f["description"] for f in cfg["roleFamilies"])
     fde = next(f["description"] for f in cfg["roleFamilies"] if f["name"] == "FDE/Solutions")
     assert "technical or solutions consultants" in fde and "Not accounting" in fde, fde
+    # Rahat, 2026-10-01 (#11): account management and customer success aren't FDE/Solutions.
+    assert "Not account management or customer success" in fde and "technical account managers" in fde, fde
     # Scoring (spec #1, issue #9).
     assert cfg["weights"] == WEIGHTS, cfg["weights"]
     assert cfg["minFitScore"] == 60 and cfg["freshnessWindowDays"] == 30 and cfg["dailyCap"] == 10

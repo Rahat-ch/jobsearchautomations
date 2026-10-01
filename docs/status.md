@@ -160,6 +160,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 - **Claude:** writes only for the leads that make the daily cap, and when Rahat taps "Find people".
 - **Role family required** (decided 2026-09-30): a lead whose role family is "None of these" (Jev's top answer) is never sent, whatever its fit score. The lead's `selection_reason` records why a lead was held back.
 - **Consultants** (decided 2026-09-30): Technical Consultant and Solutions Consultant roles count as FDE/Solutions; accounting, finance or business-process consulting (such as Partner Consultant, Accounting) does not.
+- **Account management and customer success** (decided 2026-10-01, issue #11): Technical Account Manager, Account Manager and Customer Success Manager roles are not FDE/Solutions. The family's description says so, which changes Jev's request, so unsent leads are judged again on the next scan.
 - **Fit line model:** Claude Sonnet 5.5 (`claude-sonnet-5-5`).
 - **Seniority:** Senior, Lead and Founding Engineer are the focus. Junior, mid-level, Staff+ and manager titles score low.
 - **Referral:** 0 by default. A Telegram button on a lead marks "I have a referral" and adds the referral points.
