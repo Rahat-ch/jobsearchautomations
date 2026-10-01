@@ -1,0 +1,265 @@
+{
+ "jobs": [
+  {
+   "absolute_url": "https://instacart.careers/job/?gh_jid=8053797",
+   "internal_job_id": 3490577,
+   "location": {
+    "name": "United States - Remote"
+   },
+   "id": 8053797,
+   "updated_at": "2026-09-02T17:03:54-04:00",
+   "requisition_id": "MH143",
+   "title": "Senior Software Engineer II, AI Labs & Foundations",
+   "pay_input_ranges": [
+    {
+     "min_cents": 23000000,
+     "max_cents": 24250000,
+     "currency_type": "USD",
+     "title": "CA, NY, CT, NJ",
+     "blurb": "<p><span style=\"font-weight: 400;\">Instacart provides highly market-competitive compensation and benefits in each location where our employees work. This role …"
+    },
+    {
+     "min_cents": 22000000,
+     "max_cents": 23200000,
+     "currency_type": "USD",
+     "title": "WA",
+     "blurb": ""
+    },
+    {
+     "min_cents": 21100000,
+     "max_cents": 22250000,
+     "currency_type": "USD",
+     "title": "OR, DE, ME, MA, MD, NH, RI, VT, DC, PA, VA, CO, TX, IL, HI",
+     "blurb": ""
+    },
+    {
+     "min_cents": 19200000,
+     "max_cents": 20250000,
+     "currency_type": "USD",
+     "title": "All other states",
+     "blurb": ""
+    }
+   ],
+   "company_name": "Instacart",
+   "first_published": "2026-09-02T17:03:54-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;strong&gt;We&#39;re transforming the grocery industry&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;&lt;span class=&quot;im&quot;&gt;At Instacart, we invite the world to share love through food because we believe everyone should have access to the food they love and more time to enjoy it together. Where others see a simple need for grocery delivery, we see exciting complexity and endless opportunity to serve the varied needs of our community. We work to deliver an essential service that customers rely on to get their groceries and household goods, while also offering safe and flexible earnings opportunities to Instacart Personal Shoppers.&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;Instacart has become a lifeline for millions of people, and we’re building the team to help push our shopping cart forward. If you’re ready to do the best work of your life, come join our table.&lt;/p&gt;\n&lt;p&gt;&lt;strong&gt;Instacart is a Flex First team &lt;/strong&gt;&lt;/p&gt;",
+   "departments": [
+    {
+     "id": 50240,
+     "name": "Infrastructure",
+     "child_ids": [],
+     "parent_id": 4132
+    }
+   ],
+   "offices": [
+    {
+     "id": 59835,
+     "name": "Remote - United States",
+     "location": null,
+     "child_ids": [],
+     "parent_id": 88197
+    }
+   ]
+  },
+  {
+   "absolute_url": "https://instacart.careers/job/?gh_jid=8241548",
+   "internal_job_id": 3566060,
+   "location": {
+    "name": "United States - Remote"
+   },
+   "id": 8241548,
+   "updated_at": "2026-09-29T19:37:18-04:00",
+   "requisition_id": "PR00181",
+   "title": "Senior AI Solutions Sales Executive",
+   "pay_input_ranges": [
+    {
+     "min_cents": 14000000,
+     "max_cents": 14800000,
+     "currency_type": "USD",
+     "title": "WA",
+     "blurb": "<p><span style=\"font-weight: 400;\">Instacart provides highly market-competitive compensation and benefits in each location where our employees work. This role …"
+    },
+    {
+     "min_cents": 13400000,
+     "max_cents": 14150000,
+     "currency_type": "USD",
+     "title": "OR, DE, ME, MA, MD, NH, RI, VT, DC, PA, VA, CO, TX, IL, HI",
+     "blurb": null
+    },
+    {
+     "min_cents": 12200000,
+     "max_cents": 12850000,
+     "currency_type": "USD",
+     "title": "All other states",
+     "blurb": null
+    },
+    {
+     "min_cents": 14600000,
+     "max_cents": 15400000,
+     "currency_type": "USD",
+     "title": "CA, NY, CT, NJ",
+     "blurb": ""
+    },
+    {
+     "min_cents": 17350000,
+     "max_cents": 22000000,
+     "currency_type": "USD",
+     "title": "OTE Range",
+     "blurb": ""
+    }
+   ],
+   "company_name": "Instacart",
+   "first_published": "2026-09-29T19:37:18-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;strong&gt;We&#39;re transforming the grocery industry&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;&lt;span class=&quot;im&quot;&gt;At Instacart, we invite the world to share love through food because we believe everyone should have access to the food they love and more time to enjoy it together. Where others see a simple need for grocery delivery, we see exciting complexity and endless opportunity to serve the varied needs of our community. We work to deliver an essential service that customers rely on to get their groceries and household goods, while also offering safe and flexible earnings opportunities to Instacart Personal Shoppers.&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;Instacart has become a lifeline for millions of people, and we’re building the team to help push our shopping cart forward. If you’re ready to do the best work of your life, come join our table.&lt;/p&gt;\n&lt;p&gt;&lt;strong&gt;Instacart is a Flex First team &lt;/strong&gt;&lt;/p&gt;",
+   "departments": [
+    {
+     "id": 70600,
+     "name": "Retail Business Development",
+     "child_ids": [],
+     "parent_id": 4134
+    }
+   ],
+   "offices": [
+    {
+     "id": 59835,
+     "name": "Remote - United States",
+     "location": null,
+     "child_ids": [],
+     "parent_id": 88197
+    }
+   ]
+  },
+  {
+   "absolute_url": "https://instacart.careers/job/?gh_jid=8219806",
+   "internal_job_id": 3557466,
+   "location": {
+    "name": "United States - Remote"
+   },
+   "id": 8219806,
+   "updated_at": "2026-09-22T16:30:51-04:00",
+   "requisition_id": "PR00189",
+   "title": "Billing Operations Associate",
+   "pay_input_ranges": [
+    {
+     "min_cents": 3125,
+     "max_cents": 3294,
+     "currency_type": "USD",
+     "title": "CO, DE, HI, IL, ME, MD, MA, NH, OR, PA, RI, TX, VT, VA, DC",
+     "blurb": "<p><span style=\"font-weight: 400;\">Instacart provides highly market-competitive compensation and benefits in each location where our employees work. This role …"
+    },
+    {
+     "min_cents": 2837,
+     "max_cents": 2981,
+     "currency_type": "USD",
+     "title": "AL, AK, AZ, AR, FL, GA, ID, IN, IA, KS, KY, LA, MI, MN, MS, MO, MT, NE, NV, NM, NC, ND, OH, OK, SC, SD, TN, UT, WV, WI, WY",
+     "blurb": ""
+    }
+   ],
+   "company_name": "Instacart",
+   "first_published": "2026-09-22T15:38:29-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;strong&gt;We&#39;re transforming the grocery industry&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;&lt;span class=&quot;im&quot;&gt;At Instacart, we invite the world to share love through food because we believe everyone should have access to the food they love and more time to enjoy it together. Where others see a simple need for grocery delivery, we see exciting complexity and endless opportunity to serve the varied needs of our community. We work to deliver an essential service that customers rely on to get their groceries and household goods, while also offering safe and flexible earnings opportunities to Instacart Personal Shoppers.&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;Instacart has become a lifeline for millions of people, and we’re building the team to help push our shopping cart forward. If you’re ready to do the best work of your life, come join our table.&lt;/p&gt;\n&lt;p&gt;&lt;strong&gt;Instacart is a Flex First team &lt;/strong&gt;&lt;/p&gt;",
+   "departments": [
+    {
+     "id": 50156,
+     "name": "Accounting & Finance",
+     "child_ids": [],
+     "parent_id": null
+    }
+   ],
+   "offices": [
+    {
+     "id": 59835,
+     "name": "Remote - United States",
+     "location": null,
+     "child_ids": [],
+     "parent_id": 88197
+    }
+   ]
+  },
+  {
+   "absolute_url": "https://instacart.careers/job/?gh_jid=8198161",
+   "internal_job_id": 3547969,
+   "location": {
+    "name": "Canada - Remote (ON, AB, BC, or NS Only)"
+   },
+   "id": 8198161,
+   "updated_at": "2026-09-16T22:10:18-04:00",
+   "requisition_id": "PR00157",
+   "title": "Senior Product Manager, AI Control Studio",
+   "pay_input_ranges": [
+    {
+     "min_cents": 19400000,
+     "max_cents": 20450000,
+     "currency_type": "CAD",
+     "title": "CAN",
+     "blurb": "<p>Instacart provides highly market-competitive compensation and benefits in each location where our employees work. This role is remote and the base pay range …"
+    }
+   ],
+   "company_name": "Instacart",
+   "first_published": "2026-09-16T12:35:44-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;strong&gt;We&#39;re transforming the grocery industry&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;&lt;span class=&quot;im&quot;&gt;At Instacart, we invite the world to share love through food because we believe everyone should have access to the food they love and more time to enjoy it together. Where others see a simple need for grocery delivery, we see exciting complexity and endless opportunity to serve the varied needs of our community. We work to deliver an essential service that customers rely on to get their groceries and household goods, while also offering safe and flexible earnings opportunities to Instacart Personal Shoppers.&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;Instacart has become a lifeline for millions of people, and we’re building the team to help push our shopping cart forward. If you’re ready to do the best work of your life, come join our table.&lt;/p&gt;\n&lt;p&gt;&lt;strong&gt;Instacart is a Flex First team &lt;/strong&gt;&lt;/p&gt;",
+   "departments": [
+    {
+     "id": 51786,
+     "name": "Product Management",
+     "child_ids": [],
+     "parent_id": 26696
+    }
+   ],
+   "offices": [
+    {
+     "id": 59835,
+     "name": "Remote - United States",
+     "location": null,
+     "child_ids": [],
+     "parent_id": 88197
+    }
+   ]
+  },
+  {
+   "absolute_url": "https://instacart.careers/job/?gh_jid=8154479",
+   "internal_job_id": 3528851,
+   "location": {
+    "name": "Israel - Hybrid (3 days/week in office required)"
+   },
+   "id": 8154479,
+   "updated_at": "2026-08-24T16:50:35-04:00",
+   "requisition_id": "PR00116",
+   "title": "iOS Developer",
+   "pay_input_ranges": [],
+   "company_name": "Instacart",
+   "first_published": "2026-08-24T13:50:21-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;strong&gt;We&#39;re transforming the grocery industry&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;&lt;span class=&quot;im&quot;&gt;At Instacart, we invite the world to share love through food because we believe everyone should have access to the food they love and more time to enjoy it together. Where others see a simple need for grocery delivery, we see exciting complexity and endless opportunity to serve the varied needs of our community. We work to deliver an essential service that customers rely on to get their groceries and household goods, while also offering safe and flexible earnings opportunities to Instacart Personal Shoppers.&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;Instacart has become a lifeline for millions of people, and we’re building the team to help push our shopping cart forward. If you’re ready to do the best work of your life, come join our table.&lt;/p&gt;\n&lt;p&gt;&lt;strong&gt;Instacart is a Flex First team &lt;/strong&gt;&lt;/p&gt;",
+   "departments": [
+    {
+     "id": 50239,
+     "name": "Mobile",
+     "child_ids": [],
+     "parent_id": 4132
+    }
+   ],
+   "offices": [
+    {
+     "id": 412021,
+     "name": "Remote - Israel",
+     "location": null,
+     "child_ids": [],
+     "parent_id": 412020
+    }
+   ]
+  }
+ ],
+ "meta": {
+  "total": 5
+ }
+}

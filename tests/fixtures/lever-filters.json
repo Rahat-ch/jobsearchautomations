@@ -1,0 +1,256 @@
+[
+ {
+  "additionalPlain": "",
+  "additional": "",
+  "categories": {
+   "commitment": "Full-time",
+   "department": "Engineering",
+   "location": "Dallas, TX",
+   "team": "Engineering",
+   "allLocations": [
+    "Dallas, TX"
+   ]
+  },
+  "createdAt": 1789913600000,
+  "descriptionPlain": "Synthetic test posting: Solutions Engineer, Dallas. You will build TypeScript and React features with customers.",
+  "description": "<div>Synthetic test posting: Solutions Engineer, Dallas. You will build TypeScript and React features with customers.</div>",
+  "id": "00000000-0000-4000-8000-000000000001",
+  "lists": [
+   {
+    "text": "What you'll do",
+    "content": "<li>Work with developers</li>"
+   }
+  ],
+  "text": "Solutions Engineer, Dallas",
+  "country": "US",
+  "workplaceType": "on-site",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>Synthetic test posting: Solutions Engineer, Dallas. You will build TypeScript and React features with customers.</div>",
+  "descriptionBodyPlain": "Synthetic test posting: Solutions Engineer, Dallas. You will build TypeScript and React features with customers.",
+  "hostedUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000001",
+  "applyUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000001/apply",
+  "salaryRange": {
+   "currency": "USD",
+   "interval": "per-year-salary",
+   "min": 185000,
+   "max": 230000
+  }
+ },
+ {
+  "additionalPlain": "",
+  "additional": "",
+  "categories": {
+   "commitment": "Full-time",
+   "department": "Engineering",
+   "location": "London",
+   "team": "Engineering",
+   "allLocations": [
+    "London",
+    "Remote (US)"
+   ]
+  },
+  "createdAt": 1789827200000,
+  "descriptionPlain": "Synthetic test posting: Partner Engineer, Integrations. You will build TypeScript and React features with customers.",
+  "description": "<div>Synthetic test posting: Partner Engineer, Integrations. You will build TypeScript and React features with customers.</div>",
+  "id": "00000000-0000-4000-8000-000000000002",
+  "lists": [
+   {
+    "text": "What you'll do",
+    "content": "<li>Work with developers</li>"
+   }
+  ],
+  "text": "Partner Engineer, Integrations",
+  "country": "GB",
+  "workplaceType": "hybrid",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>Synthetic test posting: Partner Engineer, Integrations. You will build TypeScript and React features with customers.</div>",
+  "descriptionBodyPlain": "Synthetic test posting: Partner Engineer, Integrations. You will build TypeScript and React features with customers.",
+  "hostedUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000002",
+  "applyUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000002/apply"
+ },
+ {
+  "additionalPlain": "",
+  "additional": "",
+  "categories": {
+   "commitment": "Full-time",
+   "department": "Engineering",
+   "location": "Austin, TX",
+   "team": "Engineering",
+   "allLocations": [
+    "Austin, TX"
+   ]
+  },
+  "createdAt": 1789740800000,
+  "descriptionPlain": "Synthetic test posting: Senior Frontend Engineer, Austin. You will build TypeScript and React features with customers.",
+  "description": "<div>Synthetic test posting: Senior Frontend Engineer, Austin. You will build TypeScript and React features with customers.</div>",
+  "id": "00000000-0000-4000-8000-000000000003",
+  "lists": [
+   {
+    "text": "What you'll do",
+    "content": "<li>Work with developers</li>"
+   }
+  ],
+  "text": "Senior Frontend Engineer, Austin",
+  "country": "US",
+  "workplaceType": "onsite",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>Synthetic test posting: Senior Frontend Engineer, Austin. You will build TypeScript and React features with customers.</div>",
+  "descriptionBodyPlain": "Synthetic test posting: Senior Frontend Engineer, Austin. You will build TypeScript and React features with customers.",
+  "hostedUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000003",
+  "applyUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000003/apply",
+  "salaryRange": {
+   "currency": "USD",
+   "interval": "per-year-salary",
+   "min": 190000,
+   "max": 220000
+  }
+ },
+ {
+  "additionalPlain": "",
+  "additional": "",
+  "categories": {
+   "commitment": "Full-time",
+   "department": "Engineering",
+   "location": "United States",
+   "team": "Engineering",
+   "allLocations": [
+    "United States"
+   ]
+  },
+  "createdAt": 1789654400000,
+  "descriptionPlain": "Synthetic test posting: Product Engineer, Payments. You will build TypeScript and React features with customers.",
+  "description": "<div>Synthetic test posting: Product Engineer, Payments. You will build TypeScript and React features with customers.</div>",
+  "id": "00000000-0000-4000-8000-000000000004",
+  "lists": [
+   {
+    "text": "What you'll do",
+    "content": "<li>Work with developers</li>"
+   }
+  ],
+  "text": "Product Engineer, Payments",
+  "country": "US",
+  "workplaceType": "remote",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>Synthetic test posting: Product Engineer, Payments. You will build TypeScript and React features with customers.</div>",
+  "descriptionBodyPlain": "Synthetic test posting: Product Engineer, Payments. You will build TypeScript and React features with customers.",
+  "hostedUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000004",
+  "applyUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000004/apply",
+  "salaryRange": {
+   "currency": "USD",
+   "interval": "per-month-salary",
+   "min": 12000,
+   "max": 14000
+  }
+ },
+ {
+  "additionalPlain": "",
+  "additional": "",
+  "categories": {
+   "commitment": "Full-time",
+   "department": "Engineering",
+   "location": "Remote - US",
+   "team": "Engineering",
+   "allLocations": [
+    "Remote - US"
+   ]
+  },
+  "createdAt": 1789568000000,
+  "descriptionPlain": "Synthetic test posting: Contract Frontend Engineer. You will build TypeScript and React features with customers.",
+  "description": "<div>Synthetic test posting: Contract Frontend Engineer. You will build TypeScript and React features with customers.</div>",
+  "id": "00000000-0000-4000-8000-000000000005",
+  "lists": [
+   {
+    "text": "What you'll do",
+    "content": "<li>Work with developers</li>"
+   }
+  ],
+  "text": "Contract Frontend Engineer",
+  "country": "US",
+  "workplaceType": "remote",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>Synthetic test posting: Contract Frontend Engineer. You will build TypeScript and React features with customers.</div>",
+  "descriptionBodyPlain": "Synthetic test posting: Contract Frontend Engineer. You will build TypeScript and React features with customers.",
+  "hostedUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000005",
+  "applyUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000005/apply",
+  "salaryRange": {
+   "currency": "USD",
+   "interval": "per-hour-wage",
+   "min": 90,
+   "max": 110
+  }
+ },
+ {
+  "additionalPlain": "",
+  "additional": "",
+  "categories": {
+   "commitment": "Full-time",
+   "department": "Engineering",
+   "location": "",
+   "team": "Engineering",
+   "allLocations": []
+  },
+  "createdAt": 1789481600000,
+  "descriptionPlain": "Synthetic test posting: Partner Solutions Engineer. You will build TypeScript and React features with customers.",
+  "description": "<div>Synthetic test posting: Partner Solutions Engineer. You will build TypeScript and React features with customers.</div>",
+  "id": "00000000-0000-4000-8000-000000000006",
+  "lists": [
+   {
+    "text": "What you'll do",
+    "content": "<li>Work with developers</li>"
+   }
+  ],
+  "text": "Partner Solutions Engineer",
+  "country": "",
+  "workplaceType": "unspecified",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>Synthetic test posting: Partner Solutions Engineer. You will build TypeScript and React features with customers.</div>",
+  "descriptionBodyPlain": "Synthetic test posting: Partner Solutions Engineer. You will build TypeScript and React features with customers.",
+  "hostedUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000006",
+  "applyUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000006/apply"
+ },
+ {
+  "additionalPlain": "",
+  "additional": "",
+  "categories": {
+   "commitment": "Full-time",
+   "department": "Engineering",
+   "location": "Stockholm",
+   "team": "Engineering",
+   "allLocations": [
+    "Stockholm",
+    "London"
+   ]
+  },
+  "createdAt": 1789395200000,
+  "descriptionPlain": "Synthetic test posting: Developer Advocate, EMEA. You will build TypeScript and React features with customers.",
+  "description": "<div>Synthetic test posting: Developer Advocate, EMEA. You will build TypeScript and React features with customers.</div>",
+  "id": "00000000-0000-4000-8000-000000000007",
+  "lists": [
+   {
+    "text": "What you'll do",
+    "content": "<li>Work with developers</li>"
+   }
+  ],
+  "text": "Developer Advocate, EMEA",
+  "country": "SE",
+  "workplaceType": "remote",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>Synthetic test posting: Developer Advocate, EMEA. You will build TypeScript and React features with customers.</div>",
+  "descriptionBodyPlain": "Synthetic test posting: Developer Advocate, EMEA. You will build TypeScript and React features with customers.",
+  "hostedUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000007",
+  "applyUrl": "https://jobs.lever.co/leverco/00000000-0000-4000-8000-000000000007/apply",
+  "salaryRange": {
+   "currency": "EUR",
+   "interval": "per-year-salary",
+   "min": 90000,
+   "max": 110000
+  }
+ }
+]

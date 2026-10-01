@@ -45,12 +45,23 @@ FILTER_BOARD = "testco"
 # Synthetic postings for pay found in the description and the freshness window.
 SCORING_FIXTURE = json.loads((FIXTURES / "ashby-scoring.json").read_text())
 SCORING_BOARD = "scoreco"
+# Greenhouse and Lever: real postings from Instacart's and Spotify's boards, and
+# synthetic postings in the same shapes for the location and pay rules.
+GH_FIXTURE = json.loads((FIXTURES / "greenhouse-instacart.json").read_text())
+GH_BOARD = "instacart"
+LV_FIXTURE = json.loads((FIXTURES / "lever-spotify.json").read_text())
+LV_BOARD = "spotify"
+GHF_FIXTURE = json.loads((FIXTURES / "greenhouse-filters.json").read_text())
+GHF_BOARD = "ghco"
+LVF_FIXTURE = json.loads((FIXTURES / "lever-filters.json").read_text())
+LVF_BOARD = "leverco"
 # A real Jev response, recorded 2026-09-30 for n8n's Senior Developer Advocate posting.
 JEV_RECORDED = json.loads((FIXTURES / "jev-response.json").read_text())
 
 # Nodes that reach the outside world. test_workflow does not pin anything by
 # itself, so every one of these must be pinned or the test would really call it.
 EXTERNAL_TYPES = {"n8n-nodes-base.telegram", "n8n-nodes-base.httpRequest", "@n8n/n8n-nodes-langchain.anthropic"}
+FETCH_NODE = "Fetch board"
 HEADER_NODE = "Send header"
 LEAD_NODE = "Send lead message"
 JEV_NODE = "Ask Jev"
@@ -71,14 +82,17 @@ def api(method, path, query=None):
 
 
 def mcp(tool, args):
-    # The MCP server rate-limits bursts of calls (HTTP 429); wait and retry.
-    for attempt in range(6):
+    # The MCP server rate-limits calls (HTTP 429, 100 per window); wait until the window
+    # resets (X-RateLimit-Reset, epoch seconds), or longer each time, and retry.
+    for attempt in range(10):
         try:
             return n8n_mcp.call(tool, args)
         except urllib.error.HTTPError as e:
-            if e.code != 429 or attempt == 5:
+            if e.code != 429 or attempt == 9:
                 raise
-            time.sleep(10 * (attempt + 1))
+            reset = e.headers.get("X-RateLimit-Reset", "")
+            wait = int(reset) - time.time() if reset.isdigit() else 0
+            time.sleep(min(max(wait, 0), 900) + 2 if wait > 0 else 15 * (attempt + 1))
 
 
 def find_workflow():
@@ -144,36 +158,75 @@ def parse_time(s):
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
-def ages(fixture):
+ATS_ORDER = ["ashby", "greenhouse", "lever"]  # the order Board list fetches boards in
+
+
+def jobs_of(fixture, ats):
+    """The postings in a board response: Lever's is a bare list."""
+    return fixture if ats == "lever" else fixture["jobs"]
+
+
+def published(job, ats):
+    if ats == "lever":
+        return datetime.fromtimestamp(job["createdAt"] / 1000, timezone.utc)
+    return parse_time(job["publishedAt" if ats == "ashby" else "first_published"])
+
+
+def set_published(job, ats, when):
+    if ats == "lever":
+        job["createdAt"] = int(when.timestamp() * 1000)
+    else:
+        job["publishedAt" if ats == "ashby" else "first_published"] = when.isoformat().replace("+00:00", "Z")
+
+
+def ages(fixture, ats="ashby"):
     """Each posting's age in whole days once rebased: the newest is 1 day old, and the
     others keep their distance from it, rounded to whole days."""
-    newest = max(parse_time(j["publishedAt"]) for j in fixture["jobs"])
-    return {j["id"]: round((newest - parse_time(j["publishedAt"])) / DAY) + 1 for j in fixture["jobs"]}
+    jobs = jobs_of(fixture, ats)
+    newest = max(published(j, ats) for j in jobs)
+    return {j["id"]: round((newest - published(j, ats)) / DAY) + 1 for j in jobs}
 
 
-def rebase(fixture, now):
-    """The fixture with publishedAt moved to whole days before now, so the freshness
-    window and freshness points don't drift as the recorded dates age."""
+def rebase(fixture, now, ats="ashby"):
+    """The fixture with its publish dates moved to whole days before now, so the
+    freshness window and freshness points don't drift as the recorded dates age."""
     out = copy.deepcopy(fixture)
-    age = ages(fixture)
-    for j in out["jobs"]:
-        j["publishedAt"] = (now - age[j["id"]] * DAY).isoformat().replace("+00:00", "Z")
+    age = ages(fixture, ats)
+    for j in jobs_of(out, ats):
+        set_published(j, ats, now - age[j["id"]] * DAY)
     return out
 
 
-def keyed(fixture, board):
-    return {f"ashby:{board}:{j['id']}": j for j in fixture["jobs"] if j.get("isListed", True)}
+def keyed(fixture, board, ats="ashby"):
+    """Lead key -> posting, with `title` and `jobUrl` under Ashby's names for every ATS."""
+    out = {}
+    for j in jobs_of(fixture, ats):
+        if not j.get("isListed", True):
+            continue
+        view = dict(j)
+        if ats == "greenhouse":
+            view["jobUrl"] = j["absolute_url"]
+        elif ats == "lever":
+            view["title"], view["jobUrl"] = j["text"], j["hostedUrl"]
+        out[f"{ats}:{board}:{j['id']}"] = view
+    return out
 
 
 JOBS = [j for j in FIXTURE["jobs"] if j.get("isListed", True)]
 KEY = keyed(FIXTURE, BOARD)
 FKEY = keyed(FILTER_FIXTURE, FILTER_BOARD)
 SKEY = keyed(SCORING_FIXTURE, SCORING_BOARD)
-ALL_KEYS = {**KEY, **FKEY, **SKEY}
-AGE = {**{k: ages(FIXTURE)[j["id"]] for k, j in KEY.items()},
-       **{k: ages(FILTER_FIXTURE)[j["id"]] for k, j in FKEY.items()},
-       **{k: ages(SCORING_FIXTURE)[j["id"]] for k, j in SKEY.items()}}
-BY_TITLE = {j["title"]: k for k, j in ALL_KEYS.items()}  # titles are unique across fixtures
+GHKEY = keyed(GH_FIXTURE, GH_BOARD, "greenhouse")
+LVKEY = keyed(LV_FIXTURE, LV_BOARD, "lever")
+GHFKEY = keyed(GHF_FIXTURE, GHF_BOARD, "greenhouse")
+LVFKEY = keyed(LVF_FIXTURE, LVF_BOARD, "lever")
+BOARDS = [(KEY, FIXTURE, "ashby"), (FKEY, FILTER_FIXTURE, "ashby"), (SKEY, SCORING_FIXTURE, "ashby"),
+          (GHKEY, GH_FIXTURE, "greenhouse"), (LVKEY, LV_FIXTURE, "lever"),
+          (GHFKEY, GHF_FIXTURE, "greenhouse"), (LVFKEY, LVF_FIXTURE, "lever")]
+ALL_KEYS = {k: j for keys, _, _ in BOARDS for k, j in keys.items()}
+AGE = {k: ages(fixture, ats)[j["id"]] for keys, fixture, ats in BOARDS for k, j in keys.items()}
+BY_TITLE = {j["title"]: k for k, j in ALL_KEYS.items()}
+assert len(BY_TITLE) == len(ALL_KEYS), "fixture titles must be unique"
 FBY_TITLE = {j["title"]: k for k, j in FKEY.items()}
 
 # What the default rules should decide for each posting, by title.
@@ -212,11 +265,45 @@ EXPECTED = {
     "Developer Advocate, Platform": "passed",  # pay only in the description, below the floor
     "Senior Product Engineer, Growth": "passed",  # pay only in the description
     "Senior Frontend Engineer, Dashboards": "passed",  # posted 41 days ago: no freshness points
+    # Greenhouse: Instacart (real)
+    "Senior Software Engineer II, AI Labs & Foundations": "passed",  # base $192K-$242.5K across state ranges
+    "Senior AI Solutions Sales Executive": "pay_floor",  # base tops out at $154K; the $220K OTE range is ignored
+    "Billing Operations Associate": "passed",  # hourly ranges: pay unknown
+    "Senior Product Manager, AI Control Studio": "location",  # Canada copy, though it lists a US remote office
+    "iOS Developer": "location",  # hybrid in Israel
+    # Lever: Spotify (real)
+    "Backend Engineer - Music": "passed",  # remote, New York
+    "Senior Software Engineer - Enterprise AI": "passed",  # remote, New York
+    "Android Engineer - Experience": "location",  # hybrid in London or Stockholm
+    "Lead, Global Markets Strategy": "location",  # hybrid in New York
+    "Senior Legal Counsel - Music Publishing": "location",  # on-site in Los Angeles
+    # Greenhouse: synthetic
+    "Senior Developer Advocate, Data": "passed",  # "Hybrid - Dallas, TX", department Marketing
+    "Staff Product Engineer": "location",  # "Austin, TX - Hybrid"
+    "Frontend Platform Engineer": "passed",  # "Dallas, TX", no workplace type
+    "Developer Experience Lead": "passed",  # no location: unclear
+    "Solutions Engineer, Commercial": "location",  # hybrid in New York; a "Remote - United States" office is ignored
+    "Senior Integrations Engineer": "pay_floor",  # base $150K-$170K; the OTE range is ignored
+    # Lever: synthetic
+    "Solutions Engineer, Dallas": "passed",  # "on-site" (the docs' spelling) in Dallas
+    "Partner Engineer, Integrations": "passed",  # hybrid in London, "Remote (US)" in allLocations
+    "Senior Frontend Engineer, Austin": "location",  # "onsite" in Austin
+    "Product Engineer, Payments": "pay_floor",  # $12K-$14K a month = $144K-$168K a year
+    "Contract Frontend Engineer": "passed",  # hourly: pay unknown
+    "Partner Solutions Engineer": "passed",  # "unspecified", no location: unclear
+    "Developer Advocate, EMEA": "location",  # remote in Stockholm or London
 }
 # location_basis that Apply hard filters gives each passing posting.
-BASIS = {"Solutions Engineer": "unclear", "Senior Product Engineer": "metro", "Frontend Engineer": "metro"}
+BASIS = {"Solutions Engineer": "unclear", "Senior Product Engineer": "metro", "Frontend Engineer": "metro",
+         "Senior Developer Advocate, Data": "metro", "Frontend Platform Engineer": "metro",
+         "Developer Experience Lead": "unclear", "Solutions Engineer, Dallas": "metro",
+         "Partner Solutions Engineer": "unclear"}
 PASSED = [k for k in KEY if EXPECTED[KEY[k]["title"]] == "passed"]
 FPASSED = sorted(k for k, j in FKEY.items() if EXPECTED[j["title"]] == "passed")
+
+
+def passing(keys):
+    return sorted(k for k, j in keys.items() if EXPECTED[j["title"]] == "passed")
 
 NONE = "None of these"
 # What the pinned Jev answers say about each passing posting, by title:
@@ -241,6 +328,17 @@ JEV = {
     "Developer Advocate, Platform": ("DevRel/DevEx", .97, 2.0, .6, "not_stated", 2.6),
     "Senior Product Engineer, Growth": ("Product/Frontend Engineering", .97, 3.7, .95, "senior", 2.2),
     "Senior Frontend Engineer, Dashboards": ("Product/Frontend Engineering", .96, 3.5, .9, "senior", 2.0),
+    "Senior Software Engineer II, AI Labs & Foundations": ("Product/Frontend Engineering", .83, 2.6, .9, "senior", 1.2),
+    "Billing Operations Associate": (NONE, .97, .2, .1, "intern_junior", .3),
+    "Backend Engineer - Music": (NONE, .6, 1.5, .9, "mid", 1.0),
+    "Senior Software Engineer - Enterprise AI": ("Product/Frontend Engineering", .7, 2.4, .8, "senior", 1.6),
+    "Senior Developer Advocate, Data": ("DevRel/DevEx", .98, 2.2, .5, "senior", 2.4),
+    "Frontend Platform Engineer": ("Product/Frontend Engineering", .95, 3.6, .9, "not_stated", 1.8),
+    "Developer Experience Lead": ("DevRel/DevEx", .9, 2.0, .3, "lead", 2.5),
+    "Solutions Engineer, Dallas": ("FDE/Solutions", .96, 3.0, .7, "not_stated", 2.0),
+    "Partner Engineer, Integrations": ("DevRel/DevEx", .88, 2.8, .7, "not_stated", 2.2),
+    "Contract Frontend Engineer": ("Product/Frontend Engineering", .94, 3.7, .95, "mid", 1.5),
+    "Partner Solutions Engineer": ("FDE/Solutions", .9, 2.5, .5, "not_stated", 1.9),
 }
 # Jev's pick for the base salary question, for postings whose pay is only in the description.
 JEV_PAY = {"Developer Advocate, Platform": "$150,000 - $170,000 USD",
@@ -342,14 +440,28 @@ def config_defaults(workflow):
     return out
 
 
-def run_scan(workflow, daily_cap=10, board=BOARD, fixture=FIXTURE, judged=(), jev=None, fit_lines=None, **config):
-    """Runs one scan. `judged` is the lead keys expected to reach Jev; their pinned
-    answers come from JEV (or `jev`, by title, where FAIL means a failed request), in
-    the order Build Jev requests sends them. `fit_lines` are Claude's pinned replies,
-    in send order."""
+FAILED_FETCH = "failed"  # in place of a fixture: the board's fetch failed
+FAILED_FETCH_ITEM = {"error": {"message": "404 - {\"ok\":false,\"error\":\"Document not found\"}",
+                               "name": "AxiosError", "status": 404}}
+
+
+def run_scan(workflow, daily_cap=10, board=BOARD, fixture=FIXTURE, boards=None, judged=(), jev=None,
+             fit_lines=None, **config):
+    """Runs one scan. `boards` is a list of (ats, board, fixture or FAILED_FETCH); by
+    default one Ashby board. `judged` is the lead keys expected to reach Jev; their
+    pinned answers come from JEV (or `jev`, by title, where FAIL means a failed
+    request), in the order Build Jev requests sends them. `fit_lines` are Claude's
+    pinned replies, in send order."""
+    boards = sorted(boards or [("ashby", board, fixture)], key=lambda b: ATS_ORDER.index(b[0]))
     cfg = config_defaults(workflow)
-    cfg.update({"ashbyBoards": [board], "telegramChatId": FAKE_CHAT_ID,
-                "dailyCap": daily_cap, "tablePrefix": TEST_PREFIX}, **config)
+    cfg.update({"ashbyBoards": [b for a, b, _ in boards if a == "ashby"],
+                "greenhouseBoards": [b for a, b, _ in boards if a == "greenhouse"],
+                "leverBoards": [b for a, b, _ in boards if a == "lever"],
+                "telegramChatId": FAKE_CHAT_ID, "dailyCap": daily_cap, "tablePrefix": TEST_PREFIX}, **config)
+    now = datetime.now(timezone.utc)
+    fetched = [{"json": FAILED_FETCH_ITEM} if f == FAILED_FETCH else
+               {"json": {"body": rebase(f, now, a), "headers": {}, "statusCode": 200, "statusMessage": "OK"}}
+               for a, _, f in boards]
     judged = sorted(judged)
     jev = jev or {}
     responses = []
@@ -360,7 +472,7 @@ def run_scan(workflow, daily_cap=10, board=BOARD, fixture=FIXTURE, judged=(), je
     pin = {
         TRIGGER: [{"json": {}}],
         "Job Scout config": [{"json": cfg}],
-        "Fetch Ashby board": [{"json": rebase(fixture, datetime.now(timezone.utc))}],
+        FETCH_NODE: fetched,
         JEV_NODE: [{"json": r} for r in responses] or [{"json": {}}],
         FIT_NODE: [{"json": {"content": [{"type": "text", "text": t}], "merged_response": t}} for t in lines]
         or [{"json": {}}],
@@ -820,6 +932,9 @@ def case_rule_changes_apply_to_saved_leads(wf):
 
 def case_config_defaults_match_spec(wf):
     cfg = config_defaults(wf)
+    assert cfg["ashbyBoards"] == ["n8n", "posthog", "ramp"], cfg["ashbyBoards"]
+    assert cfg["greenhouseBoards"] == ["instacart"], cfg["greenhouseBoards"]
+    assert cfg["leverBoards"] == ["palantir", "spotify"], cfg["leverBoards"]
     assert cfg["payFloor"] == 180000
     excluded = [t.lower() for t in cfg["excludedTitles"]]
     assert excluded == ["accountant", "finance", "legal", "counsel", "paralegal", "hr", "people ops",
@@ -854,6 +969,190 @@ def case_config_defaults_match_spec(wf):
     for field in cfg:
         assert f"**{field}**" in note, f"config sticky note doesn't explain {field}"
 
+# ---------- Greenhouse and Lever ----------
+
+# Per posting, what Normalize postings makes of the fields that differ by ATS:
+# (workplace_type, secondary_locations, pay_text, pay_min, pay_max)
+NORMALIZED = {
+    "Senior Software Engineer II, AI Labs & Foundations": ("Remote", "", "$192K – $242.5K (by location)", 192000, 242500),
+    "Senior AI Solutions Sales Executive": ("Remote", "", "$122K – $154K (by location)", 122000, 154000),
+    "Billing Operations Associate": ("Remote", "", "$28.37 – $32.94 an hour (by location)", None, None),
+    "Senior Product Manager, AI Control Studio": ("Remote", "", "194K – 204.5K CAD", None, None),
+    "iOS Developer": ("Hybrid", "", "", None, None),
+    "Backend Engineer - Music": ("Remote", "Boston, MA; Miami, FL", "", None, None),
+    "Senior Software Engineer - Enterprise AI": ("Remote", "", "", None, None),
+    "Android Engineer - Experience": ("Hybrid", "Stockholm", "", None, None),
+    "Lead, Global Markets Strategy": ("Hybrid", "", "", None, None),
+    "Senior Legal Counsel - Music Publishing": ("OnSite", "", "", None, None),
+    "Senior Developer Advocate, Data": ("Hybrid", "", "$190K – $220K; 240K – 260K CAD", 190000, 220000),
+    "Staff Product Engineer": ("Hybrid", "", "$200K – $240K", 200000, 240000),
+    "Frontend Platform Engineer": ("", "", "", None, None),
+    "Developer Experience Lead": ("", "", "", None, None),
+    "Solutions Engineer, Commercial": ("Hybrid", "", "$150K – $170K", 150000, 170000),
+    "Senior Integrations Engineer": ("Remote", "", "$150K – $170K", 150000, 170000),
+    "Solutions Engineer, Dallas": ("OnSite", "", "$185K – $230K a year", 185000, 230000),
+    "Partner Engineer, Integrations": ("Hybrid", "Remote (US)", "", None, None),
+    "Senior Frontend Engineer, Austin": ("OnSite", "", "$190K – $220K a year", 190000, 220000),
+    "Product Engineer, Payments": ("Remote", "", "$12K – $14K a month", 144000, 168000),
+    "Contract Frontend Engineer": ("Remote", "", "$90.00 – $110.00 an hour", None, None),
+    "Partner Solutions Engineer": ("", "", "", None, None),
+    "Developer Advocate, EMEA": ("Remote", "London", "90K – 110K EUR a year", None, None),
+}
+
+
+def expected_row(key, now):
+    """The saved lead for a Greenhouse or Lever posting, worked out from the fixture."""
+    ats, board, job_id = key.split(":", 2)
+    j = ALL_KEYS[key]
+    workplace, secondary, pay_text, pay_min, pay_max = NORMALIZED[j["title"]]
+    if ats == "greenhouse":
+        company, location, apply_url = j["company_name"], j["location"]["name"], j["absolute_url"]
+    else:
+        company, location, apply_url = board, j["categories"]["location"], j["applyUrl"]
+    return {"lead_key": key, "ats": ats, "board": board, "job_id": job_id, "company": company,
+            "title": j["title"], "location_text": location, "workplace_type": workplace,
+            "secondary_locations": secondary, "pay_text": pay_text, "pay_min": pay_min, "pay_max": pay_max,
+            "posting_url": j["jobUrl"], "apply_url": apply_url, "status": "new", "closed_at": None,
+            "filter_result": EXPECTED[j["title"]], "published_at": now - AGE[key] * DAY}
+
+
+def check_rows(rows, keys, now):
+    for k in keys:
+        r, want = rows[k], expected_row(k, now)
+        when = want.pop("published_at")
+        got = {f: r[f] for f in want}
+        assert got == want, f"{want['title']}: {[(f, got[f], want[f]) for f in want if got[f] != want[f]]}"
+        assert abs((parse_time(r["published_at"]) - when).total_seconds()) < 5, (want["title"], r["published_at"])
+        assert r["first_seen_at"] and r["last_seen_at"], want["title"]
+
+
+def case_greenhouse_and_lever_postings_become_leads(wf):
+    # Real postings from all three ATSes in one scan: every one becomes a lead with
+    # the same fields, keyed ats:board:job_id, and only those that pass are judged.
+    reset_test_tables()
+    now = datetime.now(timezone.utc)
+    judged = PASSED + passing(GHKEY) + passing(LVKEY)
+    run_data = run_scan(wf, boards=[("lever", LV_BOARD, LV_FIXTURE), ("greenhouse", GH_BOARD, GH_FIXTURE),
+                                    ("ashby", BOARD, FIXTURE)], judged=judged, minFitScore=101)
+    rows = rows_by_key()
+    assert sorted(rows) == sorted([*KEY, *GHKEY, *LVKEY]), "every posting should be one lead"
+    ashby_fields = {f for f, v in rows[PASSED[0]].items() if v not in (None, "")}
+    for k in [*GHKEY, *LVKEY]:
+        missing = {f for f in ashby_fields if rows[k][f] in (None, "")} - {
+            "secondary_locations", "pay_text", "pay_min", "pay_max", "workplace_type", "location_basis",
+            "role_family", "seniority_level", "scoring_state", "scored_at", "scoring_fingerprint", "jev_model",
+            "jev_answers", "sub_role_family", "sub_stack", "sub_domain", "sub_seniority", "sub_location",
+            "sub_freshness", "sub_referral", "fit_score", "selection_reason"}
+        assert not missing, f"{ALL_KEYS[k]['title']} lacks {missing}"
+    check_rows(rows, [*GHKEY, *LVKEY], now)
+    assert rows[BY_TITLE["Backend Engineer - Music"]]["location_basis"] == "us_remote"
+    # Greenhouse content is HTML-escaped HTML: Jev gets plain text.
+    body = jev_requests(run_data)[BY_TITLE["Senior Software Engineer II, AI Labs & Foundations"]]
+    text = body["state"]["posting"]["description"]
+    assert "Instacart" in text and "<" not in text and "&lt;" not in text and "&amp;" not in text, text[:200]
+    assert body["state"]["posting"]["company"] == "Instacart"
+    lever = jev_requests(run_data)[BY_TITLE["Senior Software Engineer - Enterprise AI"]]["state"]["posting"]
+    assert lever["location"] == "New York, NY · Remote", lever["location"]
+
+
+def case_greenhouse_and_lever_location_and_pay_rules(wf):
+    # Synthetic postings: Lever's live "onsite" and the docs' "on-site" are both
+    # on-site; Greenhouse's workplace type comes from the location name; DFW hybrid or
+    # on-site passes, Austin fails, a "Remote (US)" secondary location counts, no
+    # location is "Location unclear"; Greenhouse OTE ranges and Lever monthly pay are
+    # handled like Ashby's, and hourly or non-USD pay is unknown.
+    reset_test_tables()
+    now = datetime.now(timezone.utc)
+    keys = [*GHFKEY, *LVFKEY]
+    want_sent = passing(GHFKEY) + passing(LVFKEY)
+    run_data = run_scan(wf, daily_cap=50, boards=[("greenhouse", GHF_BOARD, GHF_FIXTURE), ("lever", LVF_BOARD, LVF_FIXTURE)],
+                        judged=want_sent)
+    rows = rows_by_key()
+    assert sorted(rows) == sorted(keys)
+    check_rows(rows, keys, now)
+    for title, basis in BASIS.items():
+        if BY_TITLE[title] in rows:
+            assert rows[BY_TITLE[title]]["location_basis"] == basis, (title, rows[BY_TITLE[title]]["location_basis"])
+    assert rows[BY_TITLE["Partner Engineer, Integrations"]]["location_basis"] == "us_remote"
+    header, leads = sent(run_data)
+    check_sent_order(leads, fit_order(want_sent))
+    text = {ALL_KEYS[m["lead_key"]]["title"]: m["text"] for m in leads}
+    assert "Pay: $90.00 – $110.00 an hour" in text["Contract Frontend Engineer"], text["Contract Frontend Engineer"]
+    assert "Location: Location unclear" in text["Partner Solutions Engineer"]
+    assert "Location: London · Hybrid · Remote (US) option" in text["Partner Engineer, Integrations"]
+    # The Greenhouse department (Marketing) never reaches Jev.
+    body = jev_requests(run_data)[BY_TITLE["Senior Developer Advocate, Data"]]
+    assert "Marketing" not in json.dumps(body["state"]), "the department reached Jev"
+
+
+# ---------- Closed postings ----------
+
+def without(fixture, keys, ats="ashby"):
+    """The board response minus the postings with these lead keys."""
+    ids = {k.split(":", 2)[2] for k in keys}
+    out = copy.deepcopy(fixture)
+    kept = [j for j in jobs_of(out, ats) if str(j["id"]) not in ids]
+    if ats == "lever":
+        return kept
+    out["jobs"] = kept
+    return out
+
+
+def case_missing_posting_is_closed_quietly(wf):
+    # A posting gone from a board fetched successfully closes its lead, whatever the
+    # status: a sent lead, an unsent New lead and a filtered one. Nothing is sent about
+    # it and a closed New lead is never sent; the next leads in fit order go instead.
+    reset_test_tables()
+    order = fit_order(FPASSED)
+    run_data = run_scan(wf, daily_cap=2, board=FILTER_BOARD, fixture=FILTER_FIXTURE, judged=FPASSED)
+    check_sent_order(sent(run_data)[1], order[:2])
+    gone_sent, gone_new, gone_filtered = order[0], order[2], FBY_TITLE["Product Engineer"]
+    gone = [gone_sent, gone_new, gone_filtered]
+    before = time.time()
+    header, leads = sent(run_scan(wf, daily_cap=2, board=FILTER_BOARD, fixture=without(FILTER_FIXTURE, gone)))
+    check_header(header, 2)
+    check_sent_order(leads, order[3:5])
+    rows = rows_by_key()
+    for k in gone:
+        assert rows[k]["closed_at"], f"{FKEY[k]['title']} not closed"
+        assert parse_time(rows[k]["closed_at"]).timestamp() >= before - 5
+    assert all(not r["closed_at"] for k, r in rows.items() if k not in gone), "an open posting was closed"
+    assert rows[gone_new]["status"] == "new" and not rows[gone_new]["sent_at"]
+    assert rows[gone_new]["selection_reason"] == "closed", rows[gone_new]["selection_reason"]
+    assert rows[gone_sent]["sent_at"], "closing must not clear sent_at"
+
+
+def case_failed_fetch_closes_nothing(wf):
+    # One board's fetch fails: its leads stay open (and aren't judged), while a missing
+    # posting on the board that was fetched is closed.
+    reset_test_tables()
+    lv_passed = passing(LVFKEY)
+    run_scan(wf, boards=[("ashby", FILTER_BOARD, FILTER_FIXTURE), ("lever", LVF_BOARD, LVF_FIXTURE)],
+             judged=FPASSED + lv_passed, minFitScore=101)
+    gone = BY_TITLE["Solutions Engineer, Dallas"]
+    run_data = run_scan(wf, boards=[("ashby", FILTER_BOARD, FAILED_FETCH),
+                                    ("lever", LVF_BOARD, without(LVF_FIXTURE, [gone], "lever"))],
+                        minFitScore=101)
+    rows = rows_by_key()
+    assert sorted(rows) == sorted([*FKEY, *LVFKEY]), "a failed fetch must not remove leads"
+    assert not [FKEY[k]["title"] for k in FKEY if rows[k]["closed_at"]], "the failed board's leads were closed"
+    assert rows[gone]["closed_at"], "the missing posting on the fetched board wasn't closed"
+    assert [k for k in LVFKEY if rows[k]["closed_at"]] == [gone]
+    assert sent(run_data) == ([], [])
+
+
+def case_reappearing_posting_clears_closed_at(wf):
+    reset_test_tables()
+    top = fit_order(list(SKEY))[0]
+    run_scan(wf, board=SCORING_BOARD, fixture=SCORING_FIXTURE, judged=list(SKEY), minFitScore=101)
+    run_scan(wf, board=SCORING_BOARD, fixture=without(SCORING_FIXTURE, [top]), minFitScore=101)
+    assert rows_by_key()[top]["closed_at"], "the missing posting wasn't closed"
+    header, leads = sent(run_scan(wf, daily_cap=1, board=SCORING_BOARD, fixture=SCORING_FIXTURE))
+    row = rows_by_key()[top]
+    assert row["closed_at"] is None, row["closed_at"]
+    check_sent_order(leads, [top])
+    assert row["sent_at"]
+
 
 CASES = [
     case_telegram_nodes_send_what_they_receive,
@@ -877,6 +1176,11 @@ CASES = [
     case_jev_failure_leaves_lead_unscored,
     case_message_shows_fit_breakdown_and_fit_line,
     case_pay_found_in_description,
+    case_greenhouse_and_lever_postings_become_leads,
+    case_greenhouse_and_lever_location_and_pay_rules,
+    case_missing_posting_is_closed_quietly,
+    case_failed_fetch_closes_nothing,
+    case_reappearing_posting_clears_closed_at,
 ]
 
 

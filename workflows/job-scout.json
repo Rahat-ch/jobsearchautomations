@@ -45,6 +45,18 @@
               "type": "array"
             },
             {
+              "id": "cfg-greenhouse-boards",
+              "name": "greenhouseBoards",
+              "value": "={{ [\"instacart\"] }}",
+              "type": "array"
+            },
+            {
+              "id": "cfg-lever-boards",
+              "name": "leverBoards",
+              "value": "={{ [\"palantir\", \"spotify\"] }}",
+              "type": "array"
+            },
+            {
               "id": "cfg-telegram-chat-id",
               "name": "telegramChatId",
               "value": "YOUR_TELEGRAM_CHAT_ID",
@@ -224,6 +236,10 @@
               "type": "date"
             },
             {
+              "name": "closed_at",
+              "type": "date"
+            },
+            {
               "name": "filter_result",
               "type": "string"
             },
@@ -319,75 +335,18 @@
       }
     },
     {
-      "id": "5c184a36-6e66-45ca-b112-46d5ff345021",
-      "name": "Board list",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.5,
-      "position": [
-        660,
-        400
-      ],
-      "parameters": {
-        "mode": "manual",
-        "includeOtherFields": false,
-        "assignments": {
-          "assignments": [
-            {
-              "id": "board-list",
-              "name": "boards",
-              "value": "={{ $('Job Scout config').first().json.ashbyBoards }}",
-              "type": "array"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "52df2009-4d59-4e98-8820-2c75688283d3",
-      "name": "Split boards",
-      "type": "n8n-nodes-base.splitOut",
-      "typeVersion": 1,
-      "position": [
-        880,
-        400
-      ],
-      "parameters": {
-        "fieldToSplitOut": "boards",
-        "include": "noOtherFields",
-        "options": {
-          "destinationFieldName": "board"
-        }
-      }
-    },
-    {
-      "id": "54091179-074e-4ed1-84da-49145ca9da64",
-      "name": "Fetch Ashby board",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.5,
-      "onError": "continueRegularOutput",
-      "position": [
-        1100,
-        400
-      ],
-      "parameters": {
-        "method": "GET",
-        "url": "=https://api.ashbyhq.com/posting-api/job-board/{{ encodeURIComponent(String($json.board).trim()) }}?includeCompensation=true",
-        "options": {}
-      }
-    },
-    {
       "id": "13fd8c4d-7163-4b13-a87a-a25d90ebdce6",
       "name": "Normalize postings",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1320,
+        1100,
         400
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// One lead per posting. The board name comes from the item that fetched it.\n// `places`, `description` and `salary_mentions` are working fields for later steps\n// (hard filters, Jev, Claude). Apply hard filters removes them before saving.\nconst now = new Date().toISOString();\nconst leads = [];\n\n// Ashby states pay as components (Salary, EquityCashValue, Commission, Bonus...).\n// Only base salary in USD, per year or per month, counts toward the pay floor.\n// Anything else (other currencies, other intervals, no salary) is unknown pay.\nconst PER_YEAR = { '1 YEAR': 1, '1 MONTH': 12 };\nfunction usdBasePay(comp) {\n  if (!comp) return { min: null, max: null };\n  const components = (comp.summaryComponents || [])\n    .concat((comp.compensationTiers || []).flatMap((t) => t.components || []));\n  const salary = components.filter((c) =>\n    c.compensationType === 'Salary' && c.currencyCode === 'USD' && PER_YEAR[c.interval] &&\n    (typeof c.minValue === 'number' || typeof c.maxValue === 'number'));\n  if (!salary.length) return { min: null, max: null };\n  const k = (c) => PER_YEAR[c.interval];\n  const mins = salary.map((c) => (typeof c.minValue === 'number' ? c.minValue : c.maxValue) * k(c));\n  const maxes = salary.map((c) => (typeof c.maxValue === 'number' ? c.maxValue : c.minValue) * k(c));\n  return { min: Math.min(...mins), max: Math.max(...maxes) };\n}\n\nfunction place(text, address) {\n  const a = (address && address.postalAddress) || {};\n  return {\n    text: String(text || '').trim(),\n    country: String(a.addressCountry || '').trim(),\n    region: String(a.addressRegion || '').trim(),\n    locality: String(a.addressLocality || '').trim(),\n  };\n}\n\n// Posting text as plain text: Ashby's descriptionPlain, or descriptionHtml with tags removed.\nfunction plainText(job) {\n  if (job.descriptionPlain) return String(job.descriptionPlain);\n  return String(job.descriptionHtml || '')\n    .replace(/<\\s*(br|\\/p|\\/li|\\/h\\d|\\/div)\\s*\\/?>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").replace(/&amp;/g, '&');\n}\n\n// The description sent to Jev and Claude. Unrelated text lowers Jev's accuracy, so the\n// benefits and equal-opportunity text that usually follows the role is cut, blank lines\n// are collapsed, and the rest is capped at DESCRIPTION_MAX characters.\nconst DESCRIPTION_MAX = 6000;\nconst BOILERPLATE_START = /^\\W*(benefits|perks|what we offer|our benefits|equal (employment )?opportunity)\\b|is an equal (employment )?opportunity employer/i;\nfunction trimDescription(text) {\n  const lines = text.split('\\n').map((l) => l.replace(/\\s+/g, ' ').trim());\n  const kept = [];\n  let length = 0;\n  for (const line of lines) {\n    if (length > 800 && BOILERPLATE_START.test(line)) break;\n    if (!line && (!kept.length || !kept[kept.length - 1])) continue;\n    kept.push(line);\n    length += line.length + 1;\n  }\n  let out = kept.join('\\n').trim();\n  if (out.length > DESCRIPTION_MAX) {\n    out = out.slice(0, DESCRIPTION_MAX).replace(/\\s+\\S*$/, '') + ' …';\n  }\n  return out;\n}\n\n// Dollar amounts in the full description that could be a yearly salary, such as\n// \"$150,000 - $190,000\" or \"$160K–$200K\", each with the line it appears in. Jev later\n// picks the base salary among them (or none), only for postings with no structured pay.\nconst AMOUNT = String.raw`\\$\\s?\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\$\\s?\\d{2,3}(?:\\.\\d+)?\\s?[kK]\\b`;\nconst AMOUNT_TO = String.raw`\\$?\\s?\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\$?\\s?\\d{2,3}(?:\\.\\d+)?\\s?[kK]\\b`;\nconst SALARY_SPAN = new RegExp(`(?:${AMOUNT})(?:\\\\s*USD)?(?:\\\\s*(?:-|–|—|to)\\\\s*(?:${AMOUNT_TO})(?:\\\\s*USD)?)?`, 'g');\nfunction amounts(span) {\n  return (span.match(/\\d[\\d,]*(?:\\.\\d+)?\\s?[kK]?/g) || []).map((a) => {\n    const n = parseFloat(a.replace(/,/g, ''));\n    return /k$/i.test(a.trim()) ? n * 1000 : n;\n  });\n}\nfunction salaryMentions(text) {\n  const out = [];\n  const seen = new Set();\n  for (const line of text.split('\\n')) {\n    for (const m of line.matchAll(SALARY_SPAN)) {\n      const span = m[0].trim();\n      const values = amounts(span);\n      const max = Math.max(...values);\n      if (seen.has(span) || max < 30000 || max > 2000000) continue;\n      seen.add(span);\n      out.push({ span, context: line.replace(/\\s+/g, ' ').trim().slice(0, 300) });\n    }\n  }\n  return out.slice(0, 10);\n}\n\n$input.all().forEach((item, i) => {\n  const jobs = item.json.jobs;\n  if (!Array.isArray(jobs)) return; // this board's fetch failed; the other boards still run\n  const board = $('Split boards').itemMatching(i).json.board;\n\n  for (const job of jobs) {\n    if (job.isListed === false) continue;\n    const pay = usdBasePay(job.compensation);\n    const places = [place(job.location, job.address)]\n      .concat((job.secondaryLocations || []).map((l) => place(l.location, l.address)))\n      .filter((p) => p.text || p.country || p.region || p.locality);\n    const text = plainText(job);\n    leads.push({\n      json: {\n        lead_key: 'ashby:' + board + ':' + job.id,\n        ats: 'ashby',\n        board: board,\n        job_id: job.id,\n        company: board,\n        title: job.title,\n        location_text: job.location || '',\n        workplace_type: job.workplaceType || '',\n        secondary_locations: (job.secondaryLocations || [])\n          .map((l) => l.location)\n          .filter(Boolean)\n          .join('; '),\n        pay_text: (job.compensation && job.compensation.compensationTierSummary) || '',\n        pay_min: pay.min,\n        pay_max: pay.max,\n        posting_url: job.jobUrl,\n        apply_url: job.applyUrl,\n        published_at: job.publishedAt || null,\n        last_seen_at: now,\n        places: places,\n        description: trimDescription(text),\n        salary_mentions: salaryMentions(text),\n      },\n    });\n  }\n});\n\nreturn leads;\n"
+        "jsCode": "// One lead per posting, from every ATS, with the same fields. The ATS and board come\n// from the Board list item that fetched them. `places`, `description` and\n// `salary_mentions` are working fields for later steps (hard filters, Jev, Claude);\n// Apply hard filters removes them before saving. Department and team fields are never\n// read: developer relations roles often sit in Marketing.\nconst now = new Date().toISOString();\nconst leads = [];\n\n// The postings in one Fetch board item, or null when that board's fetch failed.\nfunction boardJobs(ats, response) {\n  const body = response && !response.error ? response.body : undefined;\n  if (ats === 'lever') return Array.isArray(body) ? body : null;\n  return body && Array.isArray(body.jobs) ? body.jobs : null;\n}\n\n// Text helpers.\nconst ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '\"', apos: \"'\", nbsp: ' ', rsquo: '’', lsquo: '‘',\n  rdquo: '”', ldquo: '“', mdash: '—', ndash: '–', hellip: '…', bull: '•', middot: '·' };\nfunction decodeEntities(s) {\n  return String(s || '').replace(/&(#x[0-9a-f]+|#\\d+|[a-z]+);/gi, (m, e) => {\n    if (e[0] === '#') {\n      const code = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);\n      return Number.isFinite(code) ? String.fromCodePoint(code) : m;\n    }\n    return ENTITIES[e.toLowerCase()] ?? m;\n  });\n}\nfunction htmlText(html) {\n  return decodeEntities(String(html || '')\n    .replace(/<\\s*(br|\\/p|\\/li|\\/h\\d|\\/div)\\s*\\/?>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' '));\n}\n\n// Money as short text: 161000 -> \"$161K\", 17.5 -> \"$17.50\", CAD -> \"161K CAD\".\nfunction money(v, cur) {\n  const n = v >= 1000 ? Math.round(v / 100) / 10 + 'K' : v.toFixed(2);\n  return cur === 'USD' ? '$' + n : n;\n}\nfunction rangeText(min, max, cur) {\n  const text = min === max ? money(min, cur) : money(min, cur) + ' – ' + money(max, cur);\n  return cur === 'USD' ? text : text + ' ' + cur;\n}\n\n// ---------- Ashby ----------\n// Pay is stated as components (Salary, EquityCashValue, Commission, Bonus...). Only\n// base salary in USD, per year or per month, counts toward the pay floor. Anything\n// else (other currencies, other intervals, no salary) is unknown pay.\nconst ASHBY_PER_YEAR = { '1 YEAR': 1, '1 MONTH': 12 };\nfunction ashbyPay(comp) {\n  if (!comp) return { min: null, max: null };\n  const components = (comp.summaryComponents || [])\n    .concat((comp.compensationTiers || []).flatMap((t) => t.components || []));\n  const salary = components.filter((c) =>\n    c.compensationType === 'Salary' && c.currencyCode === 'USD' && ASHBY_PER_YEAR[c.interval] &&\n    (typeof c.minValue === 'number' || typeof c.maxValue === 'number'));\n  if (!salary.length) return { min: null, max: null };\n  const k = (c) => ASHBY_PER_YEAR[c.interval];\n  const mins = salary.map((c) => (typeof c.minValue === 'number' ? c.minValue : c.maxValue) * k(c));\n  const maxes = salary.map((c) => (typeof c.maxValue === 'number' ? c.maxValue : c.minValue) * k(c));\n  return { min: Math.min(...mins), max: Math.max(...maxes) };\n}\n\nfunction ashbyPlace(text, address) {\n  const a = (address && address.postalAddress) || {};\n  return {\n    text: String(text || '').trim(),\n    country: String(a.addressCountry || '').trim(),\n    region: String(a.addressRegion || '').trim(),\n    locality: String(a.addressLocality || '').trim(),\n  };\n}\n\n// Location from workplaceType, location and secondaryLocations (with addresses).\n// isRemote is ignored: Ashby sets it on many hybrid postings.\nfunction ashbyLead(job, board) {\n  if (job.isListed === false) return null;\n  const pay = ashbyPay(job.compensation);\n  return {\n    job_id: String(job.id),\n    company: board,\n    title: String(job.title || '').trim(),\n    location_text: job.location || '',\n    workplace_type: job.workplaceType || '',\n    secondary_locations: (job.secondaryLocations || []).map((l) => l.location).filter(Boolean).join('; '),\n    pay_text: (job.compensation && job.compensation.compensationTierSummary) || '',\n    pay_min: pay.min,\n    pay_max: pay.max,\n    posting_url: job.jobUrl,\n    apply_url: job.applyUrl,\n    published_at: job.publishedAt || null,\n    places: [ashbyPlace(job.location, job.address)]\n      .concat((job.secondaryLocations || []).map((l) => ashbyPlace(l.location, l.address))),\n    text: job.descriptionPlain ? String(job.descriptionPlain) : htmlText(job.descriptionHtml),\n  };\n}\n\n// ---------- Greenhouse ----------\n// No workplace type field: it comes from the location name (\"United States - Remote\",\n// \"San Francisco- Hybrid\"). Only location.name is used as a place. The offices list is\n// not: Instacart's Canada postings list \"Remote - United States\" as an office.\n// Pay comes from pay_input_ranges (in cents, often one range per group of states).\n// On-target earnings, commission and bonus ranges are skipped. The ranges have no\n// interval; amounts under $1,000 are taken as hourly and don't count toward the floor.\nfunction greenhouseWorkplace(text) {\n  if (/\\bhybrid\\b/i.test(text)) return 'Hybrid';\n  if (/\\bremote\\b/i.test(text)) return 'Remote';\n  if (/\\bon-?site\\b|\\bin[- ]office\\b|\\bin[- ]person\\b/i.test(text)) return 'OnSite';\n  return '';\n}\nconst NOT_BASE = /\\b(OTE|on[- ]target|commission|bonus|incentive|equity|stock)\\b/i;\nfunction greenhousePay(ranges) {\n  const base = (ranges || []).filter((r) => !NOT_BASE.test(r.title || '') &&\n    (typeof r.min_cents === 'number' || typeof r.max_cents === 'number'))\n    .map((r) => {\n      const min = (typeof r.min_cents === 'number' ? r.min_cents : r.max_cents) / 100;\n      const max = (typeof r.max_cents === 'number' ? r.max_cents : r.min_cents) / 100;\n      return { min, max, cur: String(r.currency_type || '').toUpperCase() };\n    });\n  const texts = [];\n  for (const cur of [...new Set(base.map((r) => r.cur))]) {\n    const group = base.filter((r) => r.cur === cur);\n    const min = Math.min(...group.map((r) => r.min));\n    const max = Math.max(...group.map((r) => r.max));\n    texts.push(rangeText(min, max, cur) + (max < 1000 ? ' an hour' : '') + (group.length > 1 ? ' (by location)' : ''));\n  }\n  const yearly = base.filter((r) => r.cur === 'USD' && r.max >= 1000);\n  return {\n    text: texts.join('; '),\n    min: yearly.length ? Math.min(...yearly.map((r) => r.min)) : null,\n    max: yearly.length ? Math.max(...yearly.map((r) => r.max)) : null,\n  };\n}\nfunction greenhouseLead(job, board) {\n  const location = String((job.location && job.location.name) || '').trim();\n  const pay = greenhousePay(job.pay_input_ranges);\n  return {\n    job_id: String(job.id),\n    company: job.company_name || board,\n    title: String(job.title || '').trim(),\n    location_text: location,\n    workplace_type: greenhouseWorkplace(location),\n    secondary_locations: '',\n    pay_text: pay.text,\n    pay_min: pay.min,\n    pay_max: pay.max,\n    posting_url: job.absolute_url,\n    apply_url: job.absolute_url,\n    published_at: job.first_published || job.updated_at || null,\n    places: [{ text: location, country: '', region: '', locality: '' }],\n    // content is HTML with its own HTML escaped, so decode it once before reading it.\n    text: htmlText(decodeEntities(job.content)),\n  };\n}\n\n// ---------- Lever ----------\n// Live workplaceType values are \"onsite\", \"hybrid\" and \"remote\" (the docs spell it\n// \"on-site\"); both map to Ashby's names, which the location rules use. `country` is\n// the primary location's ISO country code. Pay comes from salaryRange when it is in\n// USD per year or per month; salaryDescription is read as description text.\nconst LEVER_WORKPLACE = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'OnSite', 'on-site': 'OnSite' };\nconst LEVER_PER_YEAR = { 'per-year-salary': 1, 'per-month-salary': 12 };\nconst LEVER_INTERVAL = { 'per-year-salary': ' a year', 'per-month-salary': ' a month', 'per-week-salary': ' a week',\n  'per-day-wage': ' a day', 'per-hour-wage': ' an hour', 'one-time': ' one-time' };\nfunction leverPay(range) {\n  const r = range || {};\n  if (typeof r.min !== 'number' && typeof r.max !== 'number') return { text: '', min: null, max: null };\n  const min = typeof r.min === 'number' ? r.min : r.max;\n  const max = typeof r.max === 'number' ? r.max : r.min;\n  const cur = String(r.currency || '').toUpperCase();\n  const k = cur === 'USD' ? LEVER_PER_YEAR[r.interval] : undefined;\n  return {\n    text: rangeText(min, max, cur) + (LEVER_INTERVAL[r.interval] || ''),\n    min: k ? min * k : null,\n    max: k ? max * k : null,\n  };\n}\nfunction leverLead(job, board) {\n  const cat = job.categories || {};\n  const primary = String(cat.location || '').trim();\n  const all = (cat.allLocations || []).map((l) => String(l).trim()).filter(Boolean);\n  const others = all.filter((l) => l !== primary);\n  const pay = leverPay(job.salaryRange);\n  const text = [job.descriptionPlain || htmlText(job.description)]\n    .concat((job.lists || []).flatMap((l) => [l.text, htmlText(l.content)]))\n    .concat([job.salaryDescriptionPlain || htmlText(job.salaryDescription), job.additionalPlain || htmlText(job.additional)])\n    .filter(Boolean).join('\\n');\n  return {\n    job_id: String(job.id),\n    company: board,\n    title: String(job.text || '').trim(),\n    location_text: primary,\n    workplace_type: LEVER_WORKPLACE[String(job.workplaceType || '').toLowerCase()] || '',\n    secondary_locations: others.join('; '),\n    pay_text: pay.text,\n    pay_min: pay.min,\n    pay_max: pay.max,\n    posting_url: job.hostedUrl,\n    apply_url: job.applyUrl || job.hostedUrl,\n    published_at: typeof job.createdAt === 'number' ? new Date(job.createdAt).toISOString() : null,\n    places: [{ text: primary, country: String(job.country || '').trim(), region: '', locality: '' }]\n      .concat(others.map((l) => ({ text: l, country: '', region: '', locality: '' }))),\n    text,\n  };\n}\n\nconst PARSE = { ashby: ashbyLead, greenhouse: greenhouseLead, lever: leverLead };\n\n// ---------- Description for Jev and Claude ----------\n// Unrelated text lowers Jev's accuracy, so the benefits and equal-opportunity text that\n// usually follows the role is cut, blank lines are collapsed, and the rest is capped at\n// DESCRIPTION_MAX characters.\nconst DESCRIPTION_MAX = 6000;\nconst BOILERPLATE_START = /^\\W*(benefits|perks|what we offer|our benefits|equal (employment )?opportunity)\\b|is an equal (employment )?opportunity employer/i;\nfunction trimDescription(text) {\n  const lines = text.split('\\n').map((l) => l.replace(/\\s+/g, ' ').trim());\n  const kept = [];\n  let length = 0;\n  for (const line of lines) {\n    if (length > 800 && BOILERPLATE_START.test(line)) break;\n    if (!line && (!kept.length || !kept[kept.length - 1])) continue;\n    kept.push(line);\n    length += line.length + 1;\n  }\n  let out = kept.join('\\n').trim();\n  if (out.length > DESCRIPTION_MAX) {\n    out = out.slice(0, DESCRIPTION_MAX).replace(/\\s+\\S*$/, '') + ' …';\n  }\n  return out;\n}\n\n// Dollar amounts in the full description that could be a yearly salary, such as\n// \"$150,000 - $190,000\" or \"$160K–$200K\", each with the line it appears in. Jev later\n// picks the base salary among them (or none), only for postings with no structured pay.\nconst AMOUNT = String.raw`\\$\\s?\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\$\\s?\\d{2,3}(?:\\.\\d+)?\\s?[kK]\\b`;\nconst AMOUNT_TO = String.raw`\\$?\\s?\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\$?\\s?\\d{2,3}(?:\\.\\d+)?\\s?[kK]\\b`;\nconst SALARY_SPAN = new RegExp(`(?:${AMOUNT})(?:\\\\s*USD)?(?:\\\\s*(?:-|–|—|to)\\\\s*(?:${AMOUNT_TO})(?:\\\\s*USD)?)?`, 'g');\nfunction amounts(span) {\n  return (span.match(/\\d[\\d,]*(?:\\.\\d+)?\\s?[kK]?/g) || []).map((a) => {\n    const n = parseFloat(a.replace(/,/g, ''));\n    return /k$/i.test(a.trim()) ? n * 1000 : n;\n  });\n}\nfunction salaryMentions(text) {\n  const out = [];\n  const seen = new Set();\n  for (const line of text.split('\\n')) {\n    for (const m of line.matchAll(SALARY_SPAN)) {\n      const span = m[0].trim();\n      const values = amounts(span);\n      const max = Math.max(...values);\n      if (seen.has(span) || max < 30000 || max > 2000000) continue;\n      seen.add(span);\n      out.push({ span, context: line.replace(/\\s+/g, ' ').trim().slice(0, 300) });\n    }\n  }\n  return out.slice(0, 10);\n}\n\n$input.all().forEach((item, i) => {\n  const { ats, board } = $('Board list').itemMatching(i).json;\n  const jobs = boardJobs(ats, item.json);\n  if (!jobs) return; // this board's fetch failed; the other boards still run\n\n  for (const job of jobs) {\n    const lead = PARSE[ats](job, board);\n    if (!lead) continue;\n    const { places, text, ...fields } = lead;\n    leads.push({\n      json: {\n        lead_key: ats + ':' + board + ':' + fields.job_id,\n        ats,\n        board,\n        ...fields,\n        last_seen_at: now,\n        closed_at: null, // a posting seen again is open, even if it was closed earlier\n        places: places.filter((p) => p.text || p.country || p.region || p.locality),\n        description: trimDescription(text),\n        salary_mentions: salaryMentions(text),\n      },\n    });\n  }\n});\n\nreturn leads;\n"
       }
     },
     {
@@ -396,7 +355,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        1760,
+        1540,
         400
       ],
       "parameters": {
@@ -432,7 +391,7 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "position": [
-        1980,
+        1760,
         400
       ],
       "parameters": {
@@ -489,7 +448,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4400,
+        5060,
         400
       ],
       "parameters": {
@@ -505,7 +464,7 @@
       "typeVersion": 3.5,
       "executeOnce": true,
       "position": [
-        4620,
+        5280,
         400
       ],
       "parameters": {
@@ -542,7 +501,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        4840,
+        5500,
         400
       ],
       "parameters": {
@@ -570,7 +529,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5060,
+        5720,
         400
       ],
       "parameters": {
@@ -589,7 +548,7 @@
       "maxTries": 3,
       "waitBetweenTries": 3000,
       "position": [
-        5500,
+        6160,
         500
       ],
       "parameters": {
@@ -633,7 +592,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        5720,
+        6380,
         500
       ],
       "parameters": {
@@ -692,7 +651,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        5940,
+        6600,
         500
       ],
       "parameters": {
@@ -707,7 +666,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        5280,
+        5940,
         400
       ],
       "parameters": {
@@ -725,7 +684,7 @@
         20
       ],
       "parameters": {
-        "content": "## Job Scout: daily scan\n\nEvery morning this path scans the Ashby boards listed in **Job Scout config**, saves one lead per posting in the `leads` Data Table, scores the leads that pass the hard filters, and sends the best ones to Telegram.\n\n**Setup**\n1. Create a bot with @BotFather and pick its credential on **Send header** and **Send lead message**.\n2. Add a Bearer Auth credential with your TypeSafe API key on **Ask Jev**, and an Anthropic credential on **Write fit line**.\n3. Fill in **Job Scout config** (see the note below it), including your **profileSummary**.\n4. Publish the workflow.\n\nThe `leads` table is created on the first run if it doesn't exist. Job Scout never applies for jobs or contacts anyone.\n",
+        "content": "## Job Scout: daily scan\n\nEvery morning this path scans the Ashby, Greenhouse and Lever boards listed in **Job Scout config**, saves one lead per posting in the `leads` Data Table, marks leads whose postings are gone as closed, scores the leads that pass the hard filters, and sends the best ones to Telegram.\n\n**Setup**\n1. Create a bot with @BotFather and pick its credential on **Send header** and **Send lead message**.\n2. Add a Bearer Auth credential with your TypeSafe API key on **Ask Jev**, and an Anthropic credential on **Write fit line**.\n3. Fill in **Job Scout config** (see the note below it), including your **profileSummary**.\n4. Publish the workflow.\n\nThe `leads` table is created on the first run if it doesn't exist. Job Scout never applies for jobs or contacts anyone.\n",
         "color": 4,
         "width": 460,
         "height": 320
@@ -741,7 +700,7 @@
         580
       ],
       "parameters": {
-        "content": "## Job Scout config\n\nEdit these fields in the **Job Scout config** node:\n\n- **ashbyBoards**: Ashby board names to scan, as a list. The board name is the part after `jobs.ashbyhq.com/` in a company's job board link. Default: `n8n`, `posthog`, `ramp`.\n- **telegramChatId**: the chat the daily ping goes to. Tap Start in your bot, open `https://api.telegram.org/bot<token>/getUpdates` once, and copy `message.chat.id`.\n- **dailyCap**: the most leads one daily ping sends. Leads over the cap stay New and go out on a later day. Default 10.\n- **tablePrefix**: put in front of every Data Table name, so `jobscout_` gives `jobscout_leads`. n8n looks tables up by a \"name contains\" match, so no other table name may contain the full name (for example, don't use an empty prefix if `jobscout_leads` exists). The tests use `jobscout_test_`.\n- **roleFamilies**: the kinds of roles you want, each with a `name`, a `description` and the `titleKeywords` that mark it. Jev picks a lead's family from these (or none of them), and every family scores the same. They don't filter anything. Default: DevEx/Product PM, FDE/Solutions, Product/Frontend Engineering, and DevRel/DevEx.\n- **excludedTitles**: a posting whose title contains one of these words or phrases is filtered out. Case doesn't matter and only whole words match, so `Finance` doesn't match \"Fintech\" and `HR` doesn't match \"HRIS\". Only the title is checked, never the department: developer relations roles often sit in Marketing. Default: non-engineering operations titles (Accountant, Finance, Legal, Counsel, Paralegal, HR, People Ops, Office Manager, Facilities, Executive Assistant). `Marketing` is deliberately not on the list.\n- **excludedTitleOverrides**: a title that contains one of these words is never excluded, so \"Software Engineer, Finance Platform\" is kept while \"Finance Manager\" is filtered out. Same whole-word matching. Default: Engineer, Engineering, Developer, Software, SWE, Architect, Programmer, Advocate, DevRel, Product Manager, PM, Platform.\n- **locationRules**:\n  - `usRemote`: keep postings that offer remote work in the US, including ones where \"Remote (US)\" is only a secondary location. Default `true`.\n  - `usCountryNames`: the names that count as the US.\n  - `metros`: areas where you'd also take non-remote work. Each has `cities`, `regions` (if a posting states a state, it must be one of these) and `workplaceTypes` (Ashby's `Remote`, `Hybrid`, `OnSite`). Default: Dallas–Fort Worth with its suburbs, remote, hybrid or on-site. Austin is not in the list, so only remote US roles based there pass.\n  - A posting with no location, or one that can't be placed, passes and shows as \"Location unclear\".\n- **payFloor**: the lowest yearly base pay you'd take, in US dollars. A posting is filtered out only when its stated USD base salary range tops out below the floor. Equity, bonus and commission don't count. No stated pay, or pay in another currency, passes; the message shows the posting's pay text or \"Pay not listed\". Default 180000.\n\n- **profileSummary**: a few short lines about you: target roles, core stack, years of experience, domains, the seniority you want, and location. Jev judges stack and domain fit against it, and Claude writes each lead's fit line from it. Keep it short and factual, and don't paste a resume. Changing it makes Jev judge the unsent leads again on the next scan.\n- **weights**: points for each sub-score: `roleFamily`, `stack`, `seniority`, `location`, `domain`, `freshness` and `referral`. They're scaled to add up to 100. Default 25, 20, 15, 15, 10, 10, 5. A weight change re-ranks leads on the next scan without new Jev calls.\n- **targetSeniority**: the levels that get full seniority points, from Jev's levels `intern_junior`, `mid`, `senior`, `lead`, `staff_plus`, `manager` and `founding`. A posting that states no level gets half the points, and any other level a fifth. Default `senior`, `lead`, `founding`.\n- **minFitScore**: the lowest fit score a lead can be sent with. Default 60.\n- **freshnessWindowDays**: how many days after Job Scout first sees a lead it can still be sent; only leads inside the window are judged by Jev. Separately, the freshness sub-score falls from full to zero as the posting ages (counted from the earlier of its publish date and first sighting) across the same number of days, so an old posting found today can still be sent but ranks lower. Default 30.\n- **jevModel**: the TypeSafe Jev model version. It's pinned so scores don't shift when TypeSafe ships a new version; changing it makes Jev judge the unsent leads again. Default `jev-1.13.0`.\n\n**Run time** is set on the **Daily scan** trigger, not here, because a trigger's settings can't read other nodes. Default 8:00 in the instance timezone. If n8n is down at that time, the most recent missed scan runs when it comes back.",
+        "content": "## Job Scout config\n\nEdit these fields in the **Job Scout config** node:\n\n- **ashbyBoards**: Ashby board names to scan, as a list. The board name is the part after `jobs.ashbyhq.com/` in a company's job board link. Default: `n8n`, `posthog`, `ramp`.\n- **greenhouseBoards**: Greenhouse board names, the part after `boards.greenhouse.io/` or `job-boards.greenhouse.io/` in a company's Greenhouse job board link. Default: `instacart`.\n- **leverBoards**: Lever site names, the part after `jobs.lever.co/` in a company's Lever job board link. Default: `palantir`, `spotify`.\n- A board whose list can't be fetched is skipped for that scan, and none of its leads are marked closed.\n- **telegramChatId**: the chat the daily ping goes to. Tap Start in your bot, open `https://api.telegram.org/bot<token>/getUpdates` once, and copy `message.chat.id`.\n- **dailyCap**: the most leads one daily ping sends. Leads over the cap stay New and go out on a later day. Default 10.\n- **tablePrefix**: put in front of every Data Table name, so `jobscout_` gives `jobscout_leads`. n8n looks tables up by a \"name contains\" match, so no other table name may contain the full name (for example, don't use an empty prefix if `jobscout_leads` exists). The tests use `jobscout_test_`.\n- **roleFamilies**: the kinds of roles you want, each with a `name`, a `description` and the `titleKeywords` that mark it. Jev picks a lead's family from these (or none of them), and every family scores the same. They don't filter anything. Default: DevEx/Product PM, FDE/Solutions, Product/Frontend Engineering, and DevRel/DevEx.\n- **excludedTitles**: a posting whose title contains one of these words or phrases is filtered out. Case doesn't matter and only whole words match, so `Finance` doesn't match \"Fintech\" and `HR` doesn't match \"HRIS\". Only the title is checked, never the department: developer relations roles often sit in Marketing. Default: non-engineering operations titles (Accountant, Finance, Legal, Counsel, Paralegal, HR, People Ops, Office Manager, Facilities, Executive Assistant). `Marketing` is deliberately not on the list.\n- **excludedTitleOverrides**: a title that contains one of these words is never excluded, so \"Software Engineer, Finance Platform\" is kept while \"Finance Manager\" is filtered out. Same whole-word matching. Default: Engineer, Engineering, Developer, Software, SWE, Architect, Programmer, Advocate, DevRel, Product Manager, PM, Platform.\n- **locationRules**:\n  - `usRemote`: keep postings that offer remote work in the US, including ones where \"Remote (US)\" is only a secondary location. Default `true`.\n  - `usCountryNames`: the names that count as the US.\n  - `metros`: areas where you'd also take non-remote work. Each has `cities`, `regions` (if a posting states a state, it must be one of these) and `workplaceTypes` (`Remote`, `Hybrid`, `OnSite`; Lever's and Greenhouse's workplace types are mapped to these). Default: Dallas–Fort Worth with its suburbs, remote, hybrid or on-site. Austin is not in the list, so only remote US roles based there pass.\n  - A posting with no location, or one that can't be placed, passes and shows as \"Location unclear\".\n- **payFloor**: the lowest yearly base pay you'd take, in US dollars. A posting is filtered out only when its stated USD base salary range tops out below the floor. Equity, bonus and commission don't count. No stated pay, or pay in another currency, passes; the message shows the posting's pay text or \"Pay not listed\". Default 180000.\n\n- **profileSummary**: a few short lines about you: target roles, core stack, years of experience, domains, the seniority you want, and location. Jev judges stack and domain fit against it, and Claude writes each lead's fit line from it. Keep it short and factual, and don't paste a resume. Changing it makes Jev judge the unsent leads again on the next scan.\n- **weights**: points for each sub-score: `roleFamily`, `stack`, `seniority`, `location`, `domain`, `freshness` and `referral`. They're scaled to add up to 100. Default 25, 20, 15, 15, 10, 10, 5. A weight change re-ranks leads on the next scan without new Jev calls.\n- **targetSeniority**: the levels that get full seniority points, from Jev's levels `intern_junior`, `mid`, `senior`, `lead`, `staff_plus`, `manager` and `founding`. A posting that states no level gets half the points, and any other level a fifth. Default `senior`, `lead`, `founding`.\n- **minFitScore**: the lowest fit score a lead can be sent with. Default 60.\n- **freshnessWindowDays**: how many days after Job Scout first sees a lead it can still be sent; only leads inside the window are judged by Jev. Separately, the freshness sub-score falls from full to zero as the posting ages (counted from the earlier of its publish date and first sighting) across the same number of days, so an old posting found today can still be sent but ranks lower. Default 30.\n- **jevModel**: the TypeSafe Jev model version. It's pinned so scores don't shift when TypeSafe ships a new version; changing it makes Jev judge the unsent leads again. Default `jev-1.13.0`.\n\n**Run time** is set on the **Daily scan** trigger, not here, because a trigger's settings can't read other nodes. Default 8:00 in the instance timezone. If n8n is down at that time, the most recent missed scan runs when it comes back.",
         "color": 6,
         "width": 700,
         "height": 1500
@@ -753,11 +712,11 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1700,
+        1480,
         580
       ],
       "parameters": {
-        "content": "## Save leads\n\nA lead is keyed by `ashby:<board>:<job id>`.\n\n- **Save lead** upserts on that key, so a second scan updates the posting fields and `last_seen_at` instead of adding a row.\n- **Mark first sighting** gives rows with no status yet `status = new` and `first_seen_at = now`. Rows that already have a status keep their first-seen date.",
+        "content": "## Save leads\n\nA lead is keyed by `<ats>:<board>:<job id>`, such as `greenhouse:instacart:7144697`. Every ATS is saved with the same fields.\n\n- **Save lead** upserts on that key, so a second scan updates the posting fields and `last_seen_at` instead of adding a row. It also clears `closed_at`, so a posting that is listed again is open again.\n- **Mark first sighting** gives rows with no status yet `status = new` and `first_seen_at = now`. Rows that already have a status keep their first-seen date.",
         "color": 7,
         "width": 420,
         "height": 260
@@ -769,11 +728,11 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        4360,
+        5020,
         640
       ],
       "parameters": {
-        "content": "## Daily ping\n\n- **Pick leads to send** chooses leads with status `new`, `filter_result` `passed`, a role family, a fit score of at least **minFitScore**, first seen within the freshness window and with no `sent_at`, highest fit score first, up to `dailyCap`. Leads over the cap stay New and compete again on later scans. If there are none, nothing is sent.\n- **Send header** sends \"Job Scout: N new leads today\" with sound.\n- Each lead goes out as its own silent message with an **Open posting** button, one per second. It shows the pay text (or a salary found in the description, or \"Pay not listed\"), the location or \"Location unclear\", the fit score with its points per sub-score, and Claude's fit line.\n- **Mark sent** sets `sent_at` and saves the fit line right after each message, so no lead is sent twice.\n\nBoth Telegram nodes use HTML parse mode and have the n8n attribution line turned off.\n",
+        "content": "## Daily ping\n\n- **Pick leads to send** chooses leads with status `new`, not closed, `filter_result` `passed`, a role family, a fit score of at least **minFitScore**, first seen within the freshness window and with no `sent_at`, highest fit score first, up to `dailyCap`. Leads over the cap stay New and compete again on later scans. If there are none, nothing is sent.\n- **Send header** sends \"Job Scout: N new leads today\" with sound.\n- Each lead goes out as its own silent message with an **Open posting** button, one per second. It shows the pay text (or a salary found in the description, or \"Pay not listed\"), the location or \"Location unclear\", the fit score with its points per sub-score, and Claude's fit line.\n- **Mark sent** sets `sent_at` and saves the fit line right after each message, so no lead is sent twice.\n\nBoth Telegram nodes use HTML parse mode and have the n8n attribution line turned off.\n",
         "color": 5,
         "width": 560,
         "height": 300
@@ -785,13 +744,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1540,
+        1320,
         400
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Hard rules from Job Scout config: location, pay floor, excluded titles.\n// Every posting is checked on every scan, so a config change also applies to\n// leads saved earlier. The first rule a lead breaks goes in filter_result\n// (\"location\", \"pay_floor\" or \"excluded_title\"); a lead that breaks none gets\n// \"passed\". Unknown pay or location never breaks a rule.\n// The department and team fields are never used: DevRel roles often sit in Marketing.\nconst cfg = $('Job Scout config').first().json;\nconst rules = cfg.locationRules || {};\nconst payFloor = Number(cfg.payFloor) || 0;\n\n// Case-insensitive match on whole words, so \"Finance\" doesn't match \"Fintech\".\nfunction wordsRx(list) {\n  const terms = (list || []).map((t) => String(t).trim()).filter(Boolean);\n  if (!terms.length) return null;\n  const alt = terms\n    .map((t) => t.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&').replace(/\\s+/g, '\\\\s+'))\n    .join('|');\n  return new RegExp('(?<![\\\\p{L}\\\\p{N}])(?:' + alt + ')(?![\\\\p{L}\\\\p{N}])', 'iu');\n}\nconst has = (rx, s) => Boolean(rx && s && rx.test(s));\n\nconst US_STATES = new Set(('AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS ' +\n  'MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY').split(' '));\n// Only used when a location has no address country.\nconst NON_US_TEXT = wordsRx(['Canada', 'UK', 'United Kingdom', 'Europe', 'EMEA', 'EU', 'European Union',\n  'APAC', 'LATAM', 'Latin America', 'Asia', 'India', 'Australia', 'Mexico', 'Brazil', 'Germany',\n  'France', 'Spain', 'Ireland', 'Netherlands', 'Poland', 'Portugal', 'Japan', 'Singapore', 'Israel',\n  'London', 'Berlin', 'Toronto']);\nconst REMOTE = wordsRx(['remote']);\nconst usNames = rules.usCountryNames || ['United States', 'USA', 'US'];\nconst US_TEXT = wordsRx(usNames);\nconst usKey = (s) => String(s).toLowerCase().replace(/\\./g, '').replace(/\\s+/g, ' ').trim();\nconst US_KEYS = new Set(usNames.map(usKey));\nconst metros = (rules.metros || []).map((m) => ({\n  cities: wordsRx(m.cities),\n  regions: wordsRx(m.regions),\n  workplaceTypes: (m.workplaceTypes || []).map((w) => String(w).toLowerCase()),\n}));\n\n// \"Plano, TX\" -> \"TX\"\nfunction stateCode(text) {\n  const m = /,\\s*([A-Z]{2})\\b/.exec(text || '');\n  return m && US_STATES.has(m[1]) ? m[1] : '';\n}\n\nfunction countryOf(p) {\n  if (p.country) return US_KEYS.has(usKey(p.country)) ? 'us' : 'other';\n  if (has(US_TEXT, p.text) || stateCode(p.text)) return 'us';\n  if (has(NON_US_TEXT, p.text)) return 'other';\n  return 'unknown';\n}\n\n// One location of a posting: \"us_remote\", \"metro\", \"unclear\" or \"no\".\nfunction placeVerdict(p, workplaceType) {\n  const country = countryOf(p);\n  if (country === 'other') return 'no';\n  const remote = workplaceType === 'remote' || has(REMOTE, p.text);\n  if (remote) {\n    if (rules.usRemote === false) return 'no';\n    return country === 'us' ? 'us_remote' : 'unclear';\n  }\n  const region = p.region || stateCode(p.text);\n  for (const m of metros) {\n    const typeOk = !workplaceType || m.workplaceTypes.includes(workplaceType);\n    const inCity = has(m.cities, p.locality) || has(m.cities, p.text);\n    const regionOk = !region || has(m.regions, region);\n    if (inCity && regionOk) return typeOk ? 'metro' : 'no';\n  }\n  // A location with no city (\"Texas\", \"United States\") might still be in a metro.\n  const cityKnown = Boolean(p.locality) || /,/.test(p.text);\n  const maybeMetro = metros.some((m) =>\n    (!workplaceType || m.workplaceTypes.includes(workplaceType)) &&\n    (!region || has(m.regions, region) || has(m.regions, p.text)));\n  return !cityKnown && maybeMetro ? 'unclear' : 'no';\n}\n\nfunction locationBasis(places, workplaceType) {\n  if (!places.length) return 'unclear';\n  const verdicts = places.map((p) => placeVerdict(p, workplaceType));\n  for (const v of ['us_remote', 'metro', 'unclear']) if (verdicts.includes(v)) return v;\n  return '';\n}\n\nconst EXCLUDED = wordsRx(cfg.excludedTitles);\n// A title with one of these words is never excluded: \"Software Engineer, Finance Platform\".\nconst OVERRIDES = wordsRx(cfg.excludedTitleOverrides);\n\nreturn $input.all().map(({ json }) => {\n  // Working fields from Normalize postings aren't saved; scoring reads them from that node.\n  const { places, description, salary_mentions, ...lead } = json;\n  const basis = locationBasis(places || [], String(lead.workplace_type || '').toLowerCase());\n  let result = 'passed';\n  if (!basis) result = 'location';\n  else if (typeof lead.pay_max === 'number' && lead.pay_max < payFloor) result = 'pay_floor';\n  else if (has(EXCLUDED, lead.title) && !has(OVERRIDES, lead.title)) result = 'excluded_title';\n  return { json: { ...lead, location_basis: basis, filter_result: result } };\n});\n"
+        "jsCode": "// Hard rules from Job Scout config: location, pay floor, excluded titles.\n// Every posting is checked on every scan, so a config change also applies to\n// leads saved earlier. The first rule a lead breaks goes in filter_result\n// (\"location\", \"pay_floor\" or \"excluded_title\"); a lead that breaks none gets\n// \"passed\". Unknown pay or location never breaks a rule.\n// The department and team fields are never used: DevRel roles often sit in Marketing.\nconst cfg = $('Job Scout config').first().json;\nconst rules = cfg.locationRules || {};\nconst payFloor = Number(cfg.payFloor) || 0;\n\n// Case-insensitive match on whole words, so \"Finance\" doesn't match \"Fintech\".\nfunction wordsRx(list) {\n  const terms = (list || []).map((t) => String(t).trim()).filter(Boolean);\n  if (!terms.length) return null;\n  const alt = terms\n    .map((t) => t.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&').replace(/\\s+/g, '\\\\s+'))\n    .join('|');\n  return new RegExp('(?<![\\\\p{L}\\\\p{N}])(?:' + alt + ')(?![\\\\p{L}\\\\p{N}])', 'iu');\n}\nconst has = (rx, s) => Boolean(rx && s && rx.test(s));\n\nconst US_STATES = new Set(('AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS ' +\n  'MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY').split(' '));\n// Only used when a location has no country (Ashby address, Lever country code).\n// Lever and Greenhouse often name a city alone (\"Stockholm\"), so common non-US cities\n// and countries are listed too.\nconst NON_US_TEXT = wordsRx(['Canada', 'UK', 'United Kingdom', 'England', 'Scotland', 'Europe', 'EMEA', 'EU',\n  'European Union', 'APAC', 'LATAM', 'Latin America', 'Asia', 'India', 'Australia', 'New Zealand', 'Mexico',\n  'Brazil', 'Argentina', 'Colombia', 'Chile', 'Germany', 'France', 'Spain', 'Italy', 'Ireland', 'Netherlands',\n  'Belgium', 'Switzerland', 'Austria', 'Sweden', 'Norway', 'Denmark', 'Finland', 'Poland', 'Portugal',\n  'Lithuania', 'Estonia', 'Czechia', 'Romania', 'Greece', 'Turkey', 'Japan', 'Korea', 'South Korea', 'China',\n  'Hong Kong', 'Taiwan', 'Singapore', 'Vietnam', 'Indonesia', 'Philippines', 'Malaysia', 'Thailand', 'Israel',\n  'UAE', 'United Arab Emirates', 'Saudi Arabia', 'Qatar', 'South Africa', 'Nigeria', 'Kenya', 'Egypt',\n  'London', 'Manchester', 'Edinburgh', 'Dublin', 'Paris', 'Berlin', 'Munich', 'Hamburg', 'Amsterdam',\n  'Brussels', 'Zurich', 'Geneva', 'Vienna', 'Stockholm', 'Oslo', 'Copenhagen', 'Helsinki', 'Warsaw', 'Krakow',\n  'Prague', 'Lisbon', 'Madrid', 'Barcelona', 'Milan', 'Rome', 'Vilnius', 'Tallinn', 'Bucharest', 'Athens',\n  'Istanbul', 'Tel Aviv', 'Dubai', 'Abu Dhabi', 'Riyadh', 'Doha', 'Tokyo', 'Seoul', 'Beijing', 'Shanghai',\n  'Shenzhen', 'Taipei', 'Jakarta', 'Manila', 'Ho Chi Minh', 'Hanoi', 'Bangkok', 'Kuala Lumpur', 'Bangalore',\n  'Bengaluru', 'Mumbai', 'Delhi', 'Hyderabad', 'Pune', 'Chennai', 'Sydney', 'Melbourne', 'Auckland',\n  'Toronto', 'Vancouver', 'Montreal', 'Ottawa', 'Calgary', 'Mexico City', 'Sao Paulo', 'São Paulo',\n  'Buenos Aires', 'Bogota', 'Bogotá', 'Santiago', 'Lagos', 'Nairobi', 'Cape Town', 'Johannesburg']);\nconst REMOTE = wordsRx(['remote']);\nconst usNames = rules.usCountryNames || ['United States', 'USA', 'US'];\nconst US_TEXT = wordsRx(usNames);\nconst usKey = (s) => String(s).toLowerCase().replace(/\\./g, '').replace(/\\s+/g, ' ').trim();\nconst US_KEYS = new Set(usNames.map(usKey));\nconst metros = (rules.metros || []).map((m) => ({\n  cities: wordsRx(m.cities),\n  regions: wordsRx(m.regions),\n  workplaceTypes: (m.workplaceTypes || []).map((w) => String(w).toLowerCase()),\n}));\n\n// \"Plano, TX\" -> \"TX\"\nfunction stateCode(text) {\n  const m = /,\\s*([A-Z]{2})\\b/.exec(text || '');\n  return m && US_STATES.has(m[1]) ? m[1] : '';\n}\n\nfunction countryOf(p) {\n  if (p.country) return US_KEYS.has(usKey(p.country)) ? 'us' : 'other';\n  if (has(US_TEXT, p.text) || stateCode(p.text)) return 'us';\n  if (has(NON_US_TEXT, p.text)) return 'other';\n  return 'unknown';\n}\n\n// One location of a posting: \"us_remote\", \"metro\", \"unclear\" or \"no\".\nfunction placeVerdict(p, workplaceType) {\n  const country = countryOf(p);\n  if (country === 'other') return 'no';\n  const remote = workplaceType === 'remote' || has(REMOTE, p.text);\n  if (remote) {\n    if (rules.usRemote === false) return 'no';\n    return country === 'us' ? 'us_remote' : 'unclear';\n  }\n  const region = p.region || stateCode(p.text);\n  for (const m of metros) {\n    const typeOk = !workplaceType || m.workplaceTypes.includes(workplaceType);\n    const inCity = has(m.cities, p.locality) || has(m.cities, p.text);\n    const regionOk = !region || has(m.regions, region);\n    if (inCity && regionOk) return typeOk ? 'metro' : 'no';\n  }\n  // A location with no city might still be in a metro, but only when it names the US\n  // (\"United States\") or the metro's region (\"Texas\"). A lone city name that isn't in a\n  // metro (\"Houston\", \"San Francisco- Hybrid\") fails.\n  const cityKnown = Boolean(p.locality) || /,/.test(p.text);\n  const maybeMetro = metros.some((m) =>\n    (!workplaceType || m.workplaceTypes.includes(workplaceType)) &&\n    (region ? has(m.regions, region) : has(m.regions, p.text) || country === 'us'));\n  return !cityKnown && maybeMetro ? 'unclear' : 'no';\n}\n\nfunction locationBasis(places, workplaceType) {\n  if (!places.length) return 'unclear';\n  const verdicts = places.map((p) => placeVerdict(p, workplaceType));\n  for (const v of ['us_remote', 'metro', 'unclear']) if (verdicts.includes(v)) return v;\n  return '';\n}\n\nconst EXCLUDED = wordsRx(cfg.excludedTitles);\n// A title with one of these words is never excluded: \"Software Engineer, Finance Platform\".\nconst OVERRIDES = wordsRx(cfg.excludedTitleOverrides);\n\nreturn $input.all().map(({ json }) => {\n  // Working fields from Normalize postings aren't saved; scoring reads them from that node.\n  const { places, description, salary_mentions, ...lead } = json;\n  const basis = locationBasis(places || [], String(lead.workplace_type || '').toLowerCase());\n  let result = 'passed';\n  if (!basis) result = 'location';\n  else if (typeof lead.pay_max === 'number' && lead.pay_max < payFloor) result = 'pay_floor';\n  else if (has(EXCLUDED, lead.title) && !has(OVERRIDES, lead.title)) result = 'excluded_title';\n  return { json: { ...lead, location_basis: basis, filter_result: result } };\n});\n"
       }
     },
     {
@@ -800,11 +759,11 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1260,
+        1040,
         580
       ],
       "parameters": {
-        "content": "## Hard filters\n\n**Apply hard filters** checks every posting on every scan against the rules in **Job Scout config**, in this order: location, pay floor, excluded titles.\n\n- The first rule a posting breaks is saved in its lead's `filter_result`: `location`, `pay_floor` or `excluded_title`. A posting that breaks none gets `passed`.\n- Filtered leads stay in the `leads` table and are never sent.\n- Every scan checks again, so a rule you edit also applies to leads saved earlier.\n- Unknown pay or location never fails a rule.\n- An excluded title word doesn't count when the title also has a word from `excludedTitleOverrides`, such as Engineer or Developer.\n\nLocation reads Ashby's workplace type, location, secondary locations and their addresses. It ignores `isRemote`, which Ashby sets on many hybrid postings. `location_basis` says why a lead passed: `us_remote`, `metro` or `unclear`. `pay_min` and `pay_max` hold the stated USD base salary per year, when there is one.",
+        "content": "## Hard filters\n\n**Apply hard filters** checks every posting on every scan against the rules in **Job Scout config**, in this order: location, pay floor, excluded titles.\n\n- The first rule a posting breaks is saved in its lead's `filter_result`: `location`, `pay_floor` or `excluded_title`. A posting that breaks none gets `passed`.\n- Filtered leads stay in the `leads` table and are never sent.\n- Every scan checks again, so a rule you edit also applies to leads saved earlier.\n- Unknown pay or location never fails a rule.\n- An excluded title word doesn't count when the title also has a word from `excludedTitleOverrides`, such as Engineer or Developer.\n\nLocation reads each posting's workplace type and locations: Ashby's location, secondary locations and addresses (not `isRemote`, which Ashby sets on many hybrid postings); Greenhouse's location name, which also gives the workplace type; and Lever's location, all locations and country code. `location_basis` says why a lead passed: `us_remote`, `metro` or `unclear`. `pay_min` and `pay_max` hold the stated USD base salary per year, when there is one.",
         "color": 3,
         "width": 420,
         "height": 460
@@ -817,7 +776,7 @@
       "typeVersion": 1.1,
       "executeOnce": true,
       "position": [
-        2200,
+        2860,
         400
       ],
       "parameters": {
@@ -857,7 +816,7 @@
       "typeVersion": 2,
       "alwaysOutputData": true,
       "position": [
-        2420,
+        3080,
         400
       ],
       "parameters": {
@@ -872,7 +831,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        2640,
+        3300,
         400
       ],
       "parameters": {
@@ -910,7 +869,7 @@
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput",
       "position": [
-        2860,
+        3520,
         300
       ],
       "parameters": {
@@ -945,7 +904,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3080,
+        3740,
         300
       ],
       "parameters": {
@@ -961,7 +920,7 @@
       "typeVersion": 1.1,
       "alwaysOutputData": true,
       "position": [
-        3300,
+        3960,
         300
       ],
       "parameters": {
@@ -995,11 +954,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3520,
+        4180,
         400
       ],
       "parameters": {
-        "jsCode": "// Fit score for every candidate lead, recomputed on every scan from the stored Jev\n// judgments and the current config, so a weight change re-ranks leads with no new\n// Jev calls. Code adds the sub-scores Jev doesn't judge:\n//   seniority: 1 for a level in targetSeniority, 0.5 when the posting states no level,\n//              0.2 for any other level (weighted by Jev's probability for each level)\n//   location:  1 for US-remote or a configured metro, 0.5 for \"Location unclear\"\n//   freshness: by the posting's age (the earlier of published and first seen): 1 for a\n//              posting from today, falling to 0 at freshnessWindowDays and staying 0\n//   referral:  0 until referrals exist\n// Each sub-score (0-1) times its weight, scaled so all weights add up to 100, is its\n// points, and the fit score is the sum of the points. A lead can be sent when it is\n// scored, passed the filters, New, unsent, not closed, first seen no more than\n// freshnessWindowDays ago, in one of the role families (Jev's top answer isn't\n// \"None of these\"), and at or above minFitScore. selection_reason records which of\n// these held a lead back, or \"eligible\".\nconst cfg = $('Job Scout config').first().json;\nconst DAY = 24 * 60 * 60 * 1000;\nconst windowDays = Number(cfg.freshnessWindowDays) || 30;\nconst minFit = Number(cfg.minFitScore) || 0;\nconst payFloor = Number(cfg.payFloor) || 0;\nconst target = new Set((cfg.targetSeniority || []).map((s) => String(s).toLowerCase()));\nconst LOCATION = { us_remote: 1, metro: 1, unclear: 0.5 };\nconst DIMENSIONS = ['roleFamily', 'stack', 'seniority', 'location', 'domain', 'freshness', 'referral'];\nconst weights = cfg.weights || {};\nconst totalWeight = DIMENSIONS.reduce((s, d) => s + (Number(weights[d]) || 0), 0) || 1;\nconst round = (n, d = 3) => Math.round(n * 10 ** d) / 10 ** d;\n\n// New judgments from this scan, by row id.\nconst judged = new Map();\nif ($('Read Jev answers').isExecuted) {\n  for (const { json } of $('Read Jev answers').all()) judged.set(json.id, json);\n}\n\nconst NONE = 'None of these';\nconst daysSince = (d) => (Date.now() - new Date(d).getTime()) / DAY;\n// The posting's age, for the freshness sub-score.\nfunction postingAge(lead) {\n  const ages = [lead.published_at, lead.first_seen_at].filter(Boolean).map(daysSince).filter((a) => !isNaN(a));\n  return ages.length ? Math.max(...ages) : 0;\n}\n// Days since Job Scout first saw the lead, for the freshness window.\nconst sinceFirstSeen = (lead) => (lead.first_seen_at ? daysSince(lead.first_seen_at) : 0);\n\nfunction seniorityScore(lead) {\n  let p = {};\n  try {\n    p = JSON.parse(lead.jev_answers || '{}').seniority.p || {};\n  } catch (e) {\n    p = {};\n  }\n  const value = (level) => (target.has(level) ? 1 : level === 'not_stated' ? 0.5 : 0.2);\n  const entries = Object.entries(p);\n  if (!entries.length) return value(lead.seniority_level);\n  return entries.reduce((s, [level, prob]) => s + prob * value(level), 0);\n}\n\nreturn $('Get candidate leads').all().filter((i) => i.json.lead_key).map(({ json: row }) => {\n  const lead = { ...row, ...(judged.get(row.id) || {}) };\n  const age = postingAge(lead);\n  const sub = {\n    roleFamily: lead.sub_role_family,\n    stack: lead.sub_stack,\n    seniority: seniorityScore(lead),\n    location: LOCATION[lead.location_basis] ?? 0,\n    domain: lead.sub_domain,\n    freshness: Math.max(0, 1 - age / windowDays),\n    referral: 0,\n  };\n\n  // Pay stated only in the description: Jev picked the span, code checks the floor.\n  let filterResult = lead.filter_result;\n  if (lead.pay_min == null && lead.pay_max == null && typeof lead.pay_extracted_max === 'number' &&\n      lead.pay_extracted_max < payFloor) {\n    filterResult = 'pay_floor';\n  }\n\n  const scored = lead.scoring_state === 'scored';\n  let points = null;\n  let fit = null;\n  if (scored) {\n    points = {};\n    for (const d of DIMENSIONS) points[d] = Math.round((100 * (Number(weights[d]) || 0) * (sub[d] || 0)) / totalWeight);\n    fit = DIMENSIONS.reduce((s, d) => s + points[d], 0);\n  }\n\n  let reason = 'eligible';\n  if (!scored) reason = 'unscored';\n  else if (filterResult !== 'passed') reason = filterResult;\n  else if (lead.role_family === NONE) reason = 'no_role_family';\n  else if (sinceFirstSeen(lead) > windowDays) reason = 'window_passed';\n  else if (fit < minFit) reason = 'below_min_fit';\n  const eligible = reason === 'eligible' && lead.status === 'new' && !lead.sent_at && !lead.closed_at;\n  return {\n    json: {\n      ...lead,\n      filter_result: filterResult,\n      sub_seniority: round(sub.seniority),\n      sub_location: sub.location,\n      sub_freshness: round(sub.freshness),\n      sub_referral: sub.referral,\n      fit_score: fit,\n      points,\n      selection_reason: reason,\n      eligible,\n    },\n  };\n});\n",
+        "jsCode": "// Fit score for every candidate lead, recomputed on every scan from the stored Jev\n// judgments and the current config, so a weight change re-ranks leads with no new\n// Jev calls. Code adds the sub-scores Jev doesn't judge:\n//   seniority: 1 for a level in targetSeniority, 0.5 when the posting states no level,\n//              0.2 for any other level (weighted by Jev's probability for each level)\n//   location:  1 for US-remote or a configured metro, 0.5 for \"Location unclear\"\n//   freshness: by the posting's age (the earlier of published and first seen): 1 for a\n//              posting from today, falling to 0 at freshnessWindowDays and staying 0\n//   referral:  0 until referrals exist\n// Each sub-score (0-1) times its weight, scaled so all weights add up to 100, is its\n// points, and the fit score is the sum of the points. A lead can be sent when it is\n// not closed, scored, passed the filters, New, unsent, first seen no more than\n// freshnessWindowDays ago, in one of the role families (Jev's top answer isn't\n// \"None of these\"), and at or above minFitScore. selection_reason records the first of\n// these that held a lead back (\"closed\" for a posting gone from its board), or \"eligible\".\nconst cfg = $('Job Scout config').first().json;\nconst DAY = 24 * 60 * 60 * 1000;\nconst windowDays = Number(cfg.freshnessWindowDays) || 30;\nconst minFit = Number(cfg.minFitScore) || 0;\nconst payFloor = Number(cfg.payFloor) || 0;\nconst target = new Set((cfg.targetSeniority || []).map((s) => String(s).toLowerCase()));\nconst LOCATION = { us_remote: 1, metro: 1, unclear: 0.5 };\nconst DIMENSIONS = ['roleFamily', 'stack', 'seniority', 'location', 'domain', 'freshness', 'referral'];\nconst weights = cfg.weights || {};\nconst totalWeight = DIMENSIONS.reduce((s, d) => s + (Number(weights[d]) || 0), 0) || 1;\nconst round = (n, d = 3) => Math.round(n * 10 ** d) / 10 ** d;\n\n// New judgments from this scan, by row id.\nconst judged = new Map();\nif ($('Read Jev answers').isExecuted) {\n  for (const { json } of $('Read Jev answers').all()) judged.set(json.id, json);\n}\n\nconst NONE = 'None of these';\nconst daysSince = (d) => (Date.now() - new Date(d).getTime()) / DAY;\n// The posting's age, for the freshness sub-score.\nfunction postingAge(lead) {\n  const ages = [lead.published_at, lead.first_seen_at].filter(Boolean).map(daysSince).filter((a) => !isNaN(a));\n  return ages.length ? Math.max(...ages) : 0;\n}\n// Days since Job Scout first saw the lead, for the freshness window.\nconst sinceFirstSeen = (lead) => (lead.first_seen_at ? daysSince(lead.first_seen_at) : 0);\n\nfunction seniorityScore(lead) {\n  let p = {};\n  try {\n    p = JSON.parse(lead.jev_answers || '{}').seniority.p || {};\n  } catch (e) {\n    p = {};\n  }\n  const value = (level) => (target.has(level) ? 1 : level === 'not_stated' ? 0.5 : 0.2);\n  const entries = Object.entries(p);\n  if (!entries.length) return value(lead.seniority_level);\n  return entries.reduce((s, [level, prob]) => s + prob * value(level), 0);\n}\n\nreturn $('Get candidate leads').all().filter((i) => i.json.lead_key).map(({ json: row }) => {\n  const lead = { ...row, ...(judged.get(row.id) || {}) };\n  const age = postingAge(lead);\n  const sub = {\n    roleFamily: lead.sub_role_family,\n    stack: lead.sub_stack,\n    seniority: seniorityScore(lead),\n    location: LOCATION[lead.location_basis] ?? 0,\n    domain: lead.sub_domain,\n    freshness: Math.max(0, 1 - age / windowDays),\n    referral: 0,\n  };\n\n  // Pay stated only in the description: Jev picked the span, code checks the floor.\n  let filterResult = lead.filter_result;\n  if (lead.pay_min == null && lead.pay_max == null && typeof lead.pay_extracted_max === 'number' &&\n      lead.pay_extracted_max < payFloor) {\n    filterResult = 'pay_floor';\n  }\n\n  const scored = lead.scoring_state === 'scored';\n  let points = null;\n  let fit = null;\n  if (scored) {\n    points = {};\n    for (const d of DIMENSIONS) points[d] = Math.round((100 * (Number(weights[d]) || 0) * (sub[d] || 0)) / totalWeight);\n    fit = DIMENSIONS.reduce((s, d) => s + points[d], 0);\n  }\n\n  let reason = 'eligible';\n  if (lead.closed_at) reason = 'closed';\n  else if (!scored) reason = 'unscored';\n  else if (filterResult !== 'passed') reason = filterResult;\n  else if (lead.role_family === NONE) reason = 'no_role_family';\n  else if (sinceFirstSeen(lead) > windowDays) reason = 'window_passed';\n  else if (fit < minFit) reason = 'below_min_fit';\n  const eligible = reason === 'eligible' && lead.status === 'new' && !lead.sent_at && !lead.closed_at;\n  return {\n    json: {\n      ...lead,\n      filter_result: filterResult,\n      sub_seniority: round(sub.seniority),\n      sub_location: sub.location,\n      sub_freshness: round(sub.freshness),\n      sub_referral: sub.referral,\n      fit_score: fit,\n      points,\n      selection_reason: reason,\n      eligible,\n    },\n  };\n});\n",
         "mode": "runOnceForAllItems",
         "language": "javaScript"
       }
@@ -1011,7 +970,7 @@
       "typeVersion": 1.1,
       "alwaysOutputData": true,
       "position": [
-        3740,
+        4400,
         400
       ],
       "parameters": {
@@ -1119,7 +1078,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3960,
+        4620,
         400
       ],
       "parameters": {
@@ -1138,7 +1097,7 @@
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput",
       "position": [
-        4180,
+        4840,
         400
       ],
       "parameters": {
@@ -1178,14 +1137,201 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        2400,
+        3060,
         600
       ],
       "parameters": {
-        "content": "## Scoring\n\nOnly leads that passed the filters, are New and unsent, and were first seen within **freshnessWindowDays** are scored.\n\n- **Build Jev requests** builds one request per lead for TypeSafe's Jev, with every question in it: role family (from the title and duties, never the department), stack fit and domain fit against **profileSummary**, whether the posting names a stack, and the seniority level. For a posting with no structured pay, a regex finds dollar amounts in the description and Jev picks the base salary among them, or none.\n- A lead is judged again only when its request changes: a new profile summary, role families, model, or posting text. Weights, **targetSeniority** and **minFitScore** are applied in code, so editing them costs no Jev calls.\n- **Ask Jev** uses a Bearer Auth credential with your TypeSafe API key (console.typesafe.ai/keys). It retries failed requests; a lead whose request still fails is saved as unscored, isn't sent, and is judged again on the next scan.\n- **Score and select** combines the sub-scores with **weights** into a fit score out of 100, every scan. Location, freshness and referral are computed in code. A salary Jev found in the description that tops out below **payFloor** sets `filter_result` to `pay_floor`.\n- A lead whose role family is \"None of these\" (Jev's top answer) is never sent, whatever its fit score.\n- Each lead's `selection_reason` says what holds it back: `unscored`, `pay_floor`, `no_role_family`, `window_passed` (first seen too long ago), `below_min_fit`, or `eligible`.\n- **Pick leads to send** takes the eligible leads, highest fit first, up to **dailyCap**.\n- **Write fit line** asks Claude (Anthropic credential) for one sentence on why each picked lead fits, using only the posting and the profile summary. Claude runs only for leads that are sent.\n\nJev costs about $0.0002 per judged lead. Each lead's sub-scores, fit score, Jev's raw answers and the fit line are saved in the `leads` table.\n",
+        "content": "## Scoring\n\nOnly leads that passed the filters, are New and unsent, and were first seen within **freshnessWindowDays** are scored.\n\n- **Build Jev requests** builds one request per lead for TypeSafe's Jev, with every question in it: role family (from the title and duties, never the department), stack fit and domain fit against **profileSummary**, whether the posting names a stack, and the seniority level. For a posting with no structured pay, a regex finds dollar amounts in the description and Jev picks the base salary among them, or none.\n- A lead is judged again only when its request changes: a new profile summary, role families, model, or posting text. Weights, **targetSeniority** and **minFitScore** are applied in code, so editing them costs no Jev calls.\n- **Ask Jev** uses a Bearer Auth credential with your TypeSafe API key (console.typesafe.ai/keys). It retries failed requests; a lead whose request still fails is saved as unscored, isn't sent, and is judged again on the next scan.\n- **Score and select** combines the sub-scores with **weights** into a fit score out of 100, every scan. Location, freshness and referral are computed in code. A salary Jev found in the description that tops out below **payFloor** sets `filter_result` to `pay_floor`.\n- A lead whose role family is \"None of these\" (Jev's top answer) is never sent, whatever its fit score.\n- Each lead's `selection_reason` says what holds it back: `closed`, `unscored`, `pay_floor`, `no_role_family`, `window_passed` (first seen too long ago), `below_min_fit`, or `eligible`.\n- **Pick leads to send** takes the eligible leads, highest fit first, up to **dailyCap**.\n- **Write fit line** asks Claude (Anthropic credential) for one sentence on why each picked lead fits, using only the posting and the profile summary. Claude runs only for leads that are sent.\n\nJev costs about $0.0002 per judged lead. Each lead's sub-scores, fit score, Jev's raw answers and the fit line are saved in the `leads` table.\n",
         "height": 640,
         "width": 760,
         "color": 4
+      }
+    },
+    {
+      "id": "5c184a36-6e66-45ca-b112-46d5ff345021",
+      "name": "Board list",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        400
+      ],
+      "parameters": {
+        "jsCode": "// One item per configured board, with the public API URL that lists its postings.\n// Fetch board asks for the full response, so each board comes back as exactly one\n// item (Lever's list is a bare JSON array, which would otherwise split into one item\n// per posting), in the same order as these items.\nconst cfg = $('Job Scout config').first().json;\nconst URLS = {\n  ashby: (b) => `https://api.ashbyhq.com/posting-api/job-board/${b}?includeCompensation=true`,\n  greenhouse: (b) => `https://boards-api.greenhouse.io/v1/boards/${b}/jobs?content=true&pay_transparency=true`,\n  lever: (b) => `https://api.lever.co/v0/postings/${b}?mode=json`,\n};\nconst lists = { ashby: cfg.ashbyBoards, greenhouse: cfg.greenhouseBoards, lever: cfg.leverBoards };\n\nconst out = [];\nfor (const [ats, boards] of Object.entries(lists)) {\n  for (const raw of boards || []) {\n    const board = String(raw).trim();\n    if (board) out.push({ json: { ats, board, url: URLS[ats](encodeURIComponent(board)) } });\n  }\n}\nreturn out;\n",
+        "mode": "runOnceForAllItems",
+        "language": "javaScript"
+      }
+    },
+    {
+      "id": "http-fetch-board",
+      "name": "Fetch board",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "position": [
+        880,
+        400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          },
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "dt-get-open-leads",
+      "name": "Get open leads",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "position": [
+        1980,
+        400
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "closed_at",
+              "condition": "isEmpty"
+            }
+          ]
+        },
+        "returnAll": true
+      }
+    },
+    {
+      "id": "js-find-closed-leads",
+      "name": "Find closed leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "alwaysOutputData": true,
+      "position": [
+        2200,
+        400
+      ],
+      "parameters": {
+        "jsCode": "// Closed detection. For each board fetched successfully this scan, an open lead from\n// that board whose posting isn't in today's list is closed: closed_at = now, whatever\n// its status. A board whose fetch failed closes nothing. Nothing is sent about it; a\n// closed lead is no longer judged or sent. If the posting comes back, Save lead clears\n// closed_at.\nconst now = new Date().toISOString();\n\n// Same check as Normalize postings: did this board's fetch return a posting list?\nfunction fetched(ats, response) {\n  const body = response && !response.error ? response.body : undefined;\n  return ats === 'lever' ? Array.isArray(body) : Boolean(body && Array.isArray(body.jobs));\n}\n\n// Fetch board returns exactly one item per Board list item, in the same order.\nconst boards = $('Board list').all().map((i) => i.json);\nconst ok = new Set();\n$('Fetch board').all().forEach((item, i) => {\n  const b = boards[i];\n  if (b && fetched(b.ats, item.json)) ok.add(b.ats + ':' + b.board);\n});\nconst seen = new Set($('Normalize postings').all().map((i) => i.json.lead_key));\n\nreturn $input.all()\n  .map((i) => i.json)\n  .filter((r) => r.lead_key && !r.closed_at && ok.has(r.ats + ':' + r.board) && !seen.has(r.lead_key))\n  .map((r) => ({ json: { id: r.id, lead_key: r.lead_key, closed_at: now } }));\n",
+        "mode": "runOnceForAllItems",
+        "language": "javaScript"
+      }
+    },
+    {
+      "id": "if-any-closed",
+      "name": "Any closed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2420,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-closed",
+              "leftValue": "={{ $json.lead_key }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "dt-mark-closed",
+      "name": "Mark closed",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "alwaysOutputData": true,
+      "position": [
+        2640,
+        260
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Job Scout config').first().json.tablePrefix }}leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "closed_at": "={{ $json.closed_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "closed_at",
+              "displayName": "closed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "sticky-closed",
+      "name": "Sticky Note closed",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1940,
+        580
+      ],
+      "parameters": {
+        "content": "## Closed postings\n\n- **Get open leads** reads every lead with no `closed_at`.\n- **Find closed leads** picks the ones from boards fetched successfully in this scan whose postings are no longer listed, whatever their status.\n- **Mark closed** sets their `closed_at`. Nothing is sent about it. A closed lead is never judged or sent, and its `selection_reason` becomes `closed`.\n- A board whose fetch failed closes nothing. If a closed posting is listed again, **Save lead** clears `closed_at`.",
+        "color": 7,
+        "width": 640,
+        "height": 260
       }
     }
   ],
@@ -1227,29 +1373,7 @@
       "main": [
         [
           {
-            "node": "Split boards",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Split boards": {
-      "main": [
-        [
-          {
-            "node": "Fetch Ashby board",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Ashby board": {
-      "main": [
-        [
-          {
-            "node": "Normalize postings",
+            "node": "Fetch board",
             "type": "main",
             "index": 0
           }
@@ -1261,17 +1385,6 @@
         [
           {
             "node": "Mark first sighting",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Mark first sighting": {
-      "main": [
-        [
-          {
-            "node": "Get candidate leads",
             "type": "main",
             "index": 0
           }
@@ -1505,25 +1618,97 @@
           }
         ]
       ]
+    },
+    "Fetch board": {
+      "main": [
+        [
+          {
+            "node": "Normalize postings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark first sighting": {
+      "main": [
+        [
+          {
+            "node": "Get open leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get open leads": {
+      "main": [
+        [
+          {
+            "node": "Find closed leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find closed leads": {
+      "main": [
+        [
+          {
+            "node": "Any closed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any closed?": {
+      "main": [
+        [
+          {
+            "node": "Mark closed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get candidate leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark closed": {
+      "main": [
+        [
+          {
+            "node": "Get candidate leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "nodeGroups": [
     {
       "id": "235d8bbf-f0d0-4a6e-baac-d8e3c5cb48b8",
       "name": "Fetch boards",
-      "description": "Makes sure the leads table exists, fetches each Ashby board in the config, and turns each posting into a lead.",
+      "description": "Makes sure the leads table exists, fetches each Ashby, Greenhouse and Lever board in the config, and turns each posting into a lead with the same fields.",
       "nodeIds": [
         "c5017551-8064-481d-9efa-4b624d401c57",
         "5c184a36-6e66-45ca-b112-46d5ff345021",
-        "52df2009-4d59-4e98-8820-2c75688283d3",
-        "54091179-074e-4ed1-84da-49145ca9da64",
+        "http-fetch-board",
         "13fd8c4d-7163-4b13-a87a-a25d90ebdce6"
       ]
     },
     {
       "id": "a7dde285-19cd-4bd6-8538-b3e3baf96afb",
       "name": "Save leads",
-      "description": "Upserts each lead on its key, then marks leads seen for the first time as New.",
+      "description": "Upserts each lead on its key (clearing closed_at for postings listed again), then marks leads seen for the first time as New.",
       "nodeIds": [
         "3bfc5373-16fe-4bd3-85cb-6da54faf29fc",
         "f05b7fb8-5c91-40ed-9085-9790f168924e"

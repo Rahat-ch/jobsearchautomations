@@ -1,0 +1,185 @@
+[
+ {
+  "additionalPlain": "The United States base range for this position is $151,942–$189,927 USD, plus equity. The benefits available for this position include health insurance, six-month paid parental leave, 401(k) retirement plan, monthly meal allowance, 23 paid days off, paid flexible holidays, and paid sick leave. …",
+  "additional": "<div>\n<div>The United States base range for this position is $151,942–$189,927 USD, plus equity. The benefits available for this position include health insurance, six-month paid parental leave, 401(k) retirement plan, monthly meal allowance, 23 paid days off, paid flexible holidays, and paid sick leave. These ranges may be modified in the future.</div>\n<div>&nbsp;</div>\n</div>",
+  "categories": {
+   "commitment": "Permanent",
+   "department": "Engineering",
+   "location": "New York, NY",
+   "team": "Music",
+   "allLocations": [
+    "New York, NY",
+    "Boston, MA",
+    "Miami, FL"
+   ]
+  },
+  "createdAt": 1790688235240,
+  "descriptionPlain": "The Music Mission team owns Spotify's end to end proposition for music creators and the experiences they create for fans. The organization is dedicated to building tools and services to enable creation, promotion, expression, and monetization at scale.\nOur team makes music videos easy for fans to …",
+  "description": "<div>\n<p>The Music Mission team owns Spotify's end to end proposition for music creators and the experiences they create for fans. The organization is dedicated to building tools and services to enable creation, promotion, expression, and monetization at scale.</p>\n<p>Our team makes music videos easy for fans to discover and meaningful for artists, powered by scalable, intelligent infrastructure that grows with our catalog. We're building personalized music video playlists, sorting videos into meaningful categories, and learning which videos listeners are most likely to love, then helping that content reach the right people.</p>\n<p>As a Backend Engineer, you'll help shape how millions of listeners experience music videos on Spotify, working alongside Data Engineers, Backend Engineers, and partners across product and design.</p>\n</div>",
+  "id": "65d6caca-6d7c-4049-8256-a128e0e7249e",
+  "lists": [
+   {
+    "text": "What You'll Do",
+    "content": "<div>\n\n<li>\n<p>Build and run production backend systems that improve how listeners discover and enjoy music videos.</p>\n</li>\n<li>\n<p>Design, develop, and evolve scalable backend services and APIs that support high-traffic parts of the Spotify app.</p>\n</li>"
+   },
+   {
+    "text": "Who You Are",
+    "content": "<div>\n\n<li>\n<p>You have experience with Java or another JVM language, and familiarity with (or interest in learning) data pipeline tools like Scio, Apache Beam, or similar.</p>\n</li>\n<li>\n<p>You've built and operated distributed, high-volume services in production, ideally on a cloud platform such as Google Cloud Platform.</p>\n</li>"
+   }
+  ],
+  "text": "Backend Engineer - Music",
+  "country": "US",
+  "workplaceType": "remote",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>\n<p>The Music Mission team owns Spotify's end to end proposition for music creators and the experiences they create for fans. The organization is dedicated to building tools and services to enable creation, promotion, expression, and monetization at scale.</p>\n<p>Our team makes music videos easy for fans to discover and meaningful for artists, powered by scalable, intelligent infrastructure that grows with our catalog. We're building personalized music video playlists, sorting videos into meaningful categories, and learning which videos listeners are most likely to love, then helping that content reach the right people.</p>\n<p>As a Backend Engineer, you'll help shape how millions of listeners experience music videos on Spotify, working alongside Data Engineers, Backend Engineers, and partners across product and design.</p>\n</div>",
+  "descriptionBodyPlain": "The Music Mission team owns Spotify's end to end proposition for music creators and the experiences they create for fans. The organization is dedicated to building tools and services to enable creation, promotion, expression, and monetization at scale.\nOur team makes music videos easy for fans to …",
+  "hostedUrl": "https://jobs.lever.co/spotify/65d6caca-6d7c-4049-8256-a128e0e7249e",
+  "applyUrl": "https://jobs.lever.co/spotify/65d6caca-6d7c-4049-8256-a128e0e7249e/apply"
+ },
+ {
+  "additionalPlain": "The United States base range for this position is $164,448–$234,926 USD, plus equity. The benefits available for this position include health insurance, six-month paid parental leave, 401(k) retirement plan, monthly meal allowance, 23 paid days off, paid flexible holidays, and paid sick leave. …",
+  "additional": "<div>The United States base range for this position is $164,448–$234,926 USD, plus equity. The benefits available for this position include health insurance, six-month paid parental leave, 401(k) retirement plan, monthly meal allowance, 23 paid days off, paid flexible holidays, and paid sick leave. These ranges may be modified in the future.</div><div><br></div><div><span style=\"font-size: 11pt;\">Spotify is an equal opportunity employer. You are welcome at Spotify for who you are, no matter where you come from, what you look like, or what’s playing in your headphones. Our platform is for everyone, and so is our workplace. The more voices we have represented and amplified in our business, the more we will all thrive, contribute, and be forward-thinking! So bring us your personal experience, your perspectives, and your background. It’s in our differences that we will find the power to keep revolutionizing the way the world listens.</span></div>",
+  "categories": {
+   "commitment": "Permanent",
+   "department": "Engineering",
+   "location": "New York, NY",
+   "team": "Platform",
+   "allLocations": [
+    "New York, NY"
+   ]
+  },
+  "createdAt": 1786644763502,
+  "descriptionPlain": "The Platform team creates the technology that enables Spotify to learn quickly and scale easily, enabling rapid growth in our users and our business around the globe. Spanning many disciplines, we work to make the business work; creating the infrastructure, tooling, frameworks, and capabilities …",
+  "description": "<p>The Platform team creates the technology that enables Spotify to learn quickly and scale easily, enabling rapid growth in our users and our business around the globe. Spanning many disciplines, we work to make the business work; creating the infrastructure, tooling, frameworks, and capabilities needed to welcome a billion customers.</p>\n<p>Enterprise AI builds and operates the internal AI platform layer that supports Spotifiers across the company. We’re helping evolve AI tooling into reliable infrastructure that teams can use in their day-to-day work. Our team builds the connective tissue between AI models and Spotify’s internal systems, with a focus on secure access, governance, identity, integrations, and dependable AI infrastructure.</p>",
+  "id": "c73be71c-1a63-4906-9925-95f2115d1f1d",
+  "lists": [
+   {
+    "text": "What You'll Do",
+    "content": "<div>\n\n<li>Design, build, and operate secure enterprise AI platform capabilities that connect AI models, agents, tools, and Spotify’s internal systems.</li>\n<li>Own major workstreams across our enterprise AI infrastructure, including our Model Context Protocol (MCP) gateway and enterprise context capabilities, from technical design through launch and operation.</li>"
+   },
+   {
+    "text": "Who You Are",
+    "content": "<div>\n\n<li>You have strong software engineering fundamentals and experience building, testing, debugging, and operating reliable backend systems.</li>\n<li>You are experienced with backend languages such as Python, Go, or similar and are comfortable designing APIs and integrations across complex systems.</li>"
+   }
+  ],
+  "text": "Senior Software Engineer - Enterprise AI",
+  "country": "US",
+  "workplaceType": "remote",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<p>The Platform team creates the technology that enables Spotify to learn quickly and scale easily, enabling rapid growth in our users and our business around the globe. Spanning many disciplines, we work to make the business work; creating the infrastructure, tooling, frameworks, and capabilities needed to welcome a billion customers.</p>\n<p>Enterprise AI builds and operates the internal AI platform layer that supports Spotifiers across the company. We&rsquo;re helping evolve AI tooling into reliable infrastructure that teams can use in their day-to-day work. Our team builds the connective tissue between AI models and Spotify&rsquo;s internal systems, with a focus on secure access, governance, identity, integrations, and dependable AI infrastructure.</p>",
+  "descriptionBodyPlain": "The Platform team creates the technology that enables Spotify to learn quickly and scale easily, enabling rapid growth in our users and our business around the globe. Spanning many disciplines, we work to make the business work; creating the infrastructure, tooling, frameworks, and capabilities …",
+  "hostedUrl": "https://jobs.lever.co/spotify/c73be71c-1a63-4906-9925-95f2115d1f1d",
+  "applyUrl": "https://jobs.lever.co/spotify/c73be71c-1a63-4906-9925-95f2115d1f1d/apply"
+ },
+ {
+  "additionalPlain": "Spotify is an equal opportunity employer. You are welcome at Spotify for who you are, no matter where you come from, what you look like, or what’s playing in your headphones. Our platform is for everyone, and so is our workplace. The more voices we have represented and amplified in our business, …",
+  "additional": "<div><span style=\"font-size: 11pt;\">Spotify is an equal opportunity employer. You are welcome at Spotify for who you are, no matter where you come from, what you look like, or what’s playing in your headphones. Our platform is for everyone, and so is our workplace. The more voices we have represented and amplified in our business, the more we will all thrive, contribute, and be forward-thinking! So bring us your personal experience, your perspectives, and your background. It’s in our differences that we will find the power to keep revolutionizing the way the world listens.</span></div>\n<div>&nbsp;</div>\n<div><span style=\"font-size: 11pt;\">At Spotify, we are passionate about inclusivity and making sure our entire recruitment process is accessible to everyone. We have ways to request reasonable accommodations during the interview process and help assist in what you need. If you need accommodations at any stage of the application or interview process, please let us know - we’re here to support you in any way we can.</span></div>",
+  "categories": {
+   "commitment": "Permanent",
+   "department": "Engineering",
+   "location": "London",
+   "team": "Experience",
+   "allLocations": [
+    "London",
+    "Stockholm"
+   ]
+  },
+  "createdAt": 1782214185805,
+  "descriptionPlain": "We design Spotify’s consumer experience—end to end, moment to moment, across every screen, platform, and partner integration. Our mission is to make listening feel effortless, personal, and joyful for billions of users around the world. That means turning complexity into clarity across hundreds of …",
+  "description": "<div>\n<p>We design Spotify’s consumer experience—end to end, moment to moment, across every screen, platform, and partner integration. Our mission is to make listening feel effortless, personal, and joyful for billions of users around the world. That means turning complexity into clarity across hundreds of touchpoints—from our mobile and desktop apps to the smart speakers, TVs, cars, and integrations where Spotify shows up every day. If it touches a consumer, we shape it. We bring deep insight into human behavior, design, and technology to craft experiences that feel intuitive, expressive, and unmistakably Spotify.</p>\n<p>The Stream Reporting team is responsible for capturing and processing the consumption signals that power some of Spotify’s most important experiences and business functions. Our systems help ensure accurate royalty reporting, support experimentation and analytics, and provide trusted data that informs recommendations and personalization across Spotify.</p>\n<p>We’re looking for an Android Engineer to join a highly collaborative team working at the intersection of mobile development, data, and platform systems. This is an opportunity to build software that operates at Spotify scale and helps power experiences used by millions of listeners every day. You’ll help shape how listening and engagement signals are captured across Spotify’s mobile experiences and transformed into trusted datasets used throughout the company.</p>\n<div>&nbsp;</div>\n</div>",
+  "id": "2193db3f-77c5-43b8-b030-8f92c9882bf1",
+  "lists": [
+   {
+    "text": "What You'll Do",
+    "content": "<div>\n\n<li>\n<p>Develop and maintain mobile client components that capture and report listening and user behavior signals across Spotify.</p>\n</li>\n<li>\n<p>Build high-quality, well-tested, and well-documented Kotlin code that contributes to business-critical datasets used for royalty reporting, analytics, experimentation, and personalization.</p>\n</li>"
+   },
+   {
+    "text": "Who You Are",
+    "content": "<div>\n\n<li>\n<p>You have experience developing Android and iOS applications using Kotlin using Swift or Objective-C</p>\n</li>\n<li>You have solid experience as a Engingeer I</li>"
+   }
+  ],
+  "text": "Android Engineer - Experience",
+  "country": "GB",
+  "workplaceType": "hybrid",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>\n<p>We design Spotify&rsquo;s consumer experience&mdash;end to end, moment to moment, across every screen, platform, and partner integration. Our mission is to make listening feel effortless, personal, and joyful for billions of users around the world. That means turning complexity into clarity across hundreds of touchpoints&mdash;from our mobile and desktop apps to the smart speakers, TVs, cars, and integrations where Spotify shows up every day. If it touches a consumer, we shape it. We bring deep insight into human behavior, design, and technology to craft experiences that feel intuitive, expressive, and unmistakably Spotify.</p>\n<p>The Stream Reporting team is responsible for capturing and processing the consumption signals that power some of Spotify&rsquo;s most important experiences and business functions. Our systems help ensure accurate royalty reporting, support experimentation and analytics, and provide trusted data that informs recommendations and personalization across Spotify.</p>\n<p>We&rsquo;re looking for an Android Engineer to join a highly collaborative team working at the intersection of mobile development, data, and platform systems. This is an opportunity to build software that operates at Spotify scale and helps power experiences used by millions of listeners every day. You&rsquo;ll help shape how listening and engagement signals are captured across Spotify&rsquo;s mobile experiences and transformed into trusted datasets used throughout the company.</p>\n<div>&nbsp;</div>\n</div>",
+  "descriptionBodyPlain": "We design Spotify’s consumer experience—end to end, moment to moment, across every screen, platform, and partner integration. Our mission is to make listening feel effortless, personal, and joyful for billions of users around the world. That means turning complexity into clarity across hundreds of …",
+  "hostedUrl": "https://jobs.lever.co/spotify/2193db3f-77c5-43b8-b030-8f92c9882bf1",
+  "applyUrl": "https://jobs.lever.co/spotify/2193db3f-77c5-43b8-b030-8f92c9882bf1/apply"
+ },
+ {
+  "additionalPlain": "The United States base range for this position is $146,891- $183,614 USD, plus equity. The benefits available for this position include health insurance, six-month paid parental leave, 401(k) retirement plan, monthly meal allowance, 23 paid days off, paid flexible holidays, and paid sick leave. …",
+  "additional": "<div>The United States base range for this position is $146,891- $183,614 USD, plus equity. The benefits available for this position include health insurance, six-month paid parental leave, 401(k) retirement plan, monthly meal allowance, 23 paid days off, paid flexible holidays, and paid sick leave. These ranges may be modified in the future.</div><div><br></div><div><span style=\"font-size: 11pt;\">Spotify is an equal opportunity employer. You are welcome at Spotify for who you are, no matter where you come from, what you look like, or what’s playing in your headphones. Our platform is for everyone, and so is our workplace. The more voices we have represented and amplified in our business, the more we will all thrive, contribute, and be forward-thinking! So bring us your personal experience, your perspectives, and your background. It’s in our differences that we will find the power to keep revolutionizing the way the world listens.</span></div>",
+  "categories": {
+   "commitment": "Permanent",
+   "department": "Markets and Subscriber Growth",
+   "location": "New York, NY",
+   "team": "Operations and Strategy",
+   "allLocations": [
+    "New York, NY"
+   ]
+  },
+  "createdAt": 1787924709447,
+  "descriptionPlain": "The Lead, Global Markets Strategy is a role on the Global Markets Strategy (“GMS”)  team, to be based in New York, reporting to the Director of Global Markets Strategy. This role is designed to have a strategic and analytical focus on our multi-year growth journey in our Markets.\n",
+  "description": "<div>\n<p>The Lead, Global Markets Strategy is a role on the Global Markets Strategy (“GMS”)&nbsp; team, to be based in New York, reporting to the Director of Global Markets Strategy. This role is designed to have a strategic and analytical focus on our multi-year growth journey in our Markets.</p>\n</div>",
+  "id": "181c3eec-8f64-455b-8b9d-fde8c7902d59",
+  "lists": [
+   {
+    "text": "What You Will Do",
+    "content": "<div>\n\n<li>Partner with regional Market MDs and GMs on strategy formulation, feedback, and refinement of regional strategies and plans, including annual strategies, GM 3-year visions, and market landscape assessments</li>\n<li>Attend and play an active role in relevant M&amp;S Growth Region QBR meetings</li>"
+   },
+   {
+    "text": "Who You Are",
+    "content": "<div>\n\n<li>You have 8+ years of experience working at a tech company, management consultancy, or similar organization</li>\n<li>You have extensive experience and expertise in growing consumer tech businesses in a global context</li>"
+   }
+  ],
+  "text": "Lead, Global Markets Strategy",
+  "country": "US",
+  "workplaceType": "hybrid",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>\n<p>The Lead, Global Markets Strategy is a role on the Global Markets Strategy (&ldquo;GMS&rdquo;)&nbsp; team, to be based in New York, reporting to the Director of Global Markets Strategy. This role is designed to have a strategic and analytical focus on our multi-year growth journey in our Markets.</p>\n</div>",
+  "descriptionBodyPlain": "The Lead, Global Markets Strategy is a role on the Global Markets Strategy (“GMS”)  team, to be based in New York, reporting to the Director of Global Markets Strategy. This role is designed to have a strategic and analytical focus on our multi-year growth journey in our Markets.\n",
+  "hostedUrl": "https://jobs.lever.co/spotify/181c3eec-8f64-455b-8b9d-fde8c7902d59",
+  "applyUrl": "https://jobs.lever.co/spotify/181c3eec-8f64-455b-8b9d-fde8c7902d59/apply"
+ },
+ {
+  "additionalPlain": "The United States base range for this position is $214,661 - $306,659, plus equity. The benefits available for this position include health insurance, six month paid parental leave, 401(k) retirement plan, monthly meal allowance, 23 paid days off, 13 paid flexible holidays, paid sick leave. These …",
+  "additional": "<div>The United States base range for this position is $214,661 - $306,659, plus equity. The benefits available for this position include health insurance, six month paid parental leave, 401(k) retirement plan, monthly meal allowance, 23 paid days off, 13 paid flexible holidays, paid sick leave. These ranges may be modified in the future.</div>",
+  "categories": {
+   "commitment": "Permanent",
+   "department": "Legal",
+   "location": "Los Angeles, CA",
+   "team": "Legal",
+   "allLocations": [
+    "Los Angeles, CA"
+   ]
+  },
+  "createdAt": 1782273940842,
+  "descriptionPlain": "We are seeking an experienced Senior Legal Counsel with deep expertise in music publishing and copyright licensing to join our Legal Licensing Team. In this role, you will partner closely with Business Affairs, Finance, and Product teams to structure, negotiate, draft complex licensing agreements …",
+  "description": "<div>We are seeking an experienced Senior Legal Counsel with deep expertise in music publishing and copyright licensing to join our Legal Licensing Team. In this role, you will partner closely with Business Affairs, Finance, and Product teams to structure, negotiate, draft complex licensing agreements with CMOs, PROs, and music publishers, and advise on the legal frameworks governing the use of musical works across Spotify’s service.</div>",
+  "id": "142aa205-8ddb-4884-97ba-600d1eb19f4f",
+  "lists": [
+   {
+    "text": "What You'll Do",
+    "content": "\n<li>Provide strategic and tactical legal advice on music publishing and copyright matters, translating complex legal issues into actionable business guidance.</li>\n<li>Partner with Business Affairs to structure, draft, and negotiate music CMO, PRO, and publishing licensing agreements.</li>"
+   },
+   {
+    "text": "Who You Are",
+    "content": "\n<li>Qualified lawyer with 10+ years of relevant law firm and/or in-house counsel experience, including substantial transactional experience in music publishing.</li>\n<li>Demonstrated experience negotiating complex agreements between digital services and music publishing rights holders, including CMOs and major and independent publishers.</li>"
+   }
+  ],
+  "text": "Senior Legal Counsel - Music Publishing",
+  "country": "US",
+  "workplaceType": "onsite",
+  "opening": "",
+  "openingPlain": "",
+  "descriptionBody": "<div>We are seeking an experienced Senior Legal Counsel with deep expertise in music publishing and copyright licensing to join our Legal Licensing Team. In this role, you will partner closely with Business Affairs, Finance, and Product teams to structure, negotiate, draft complex licensing agreements with CMOs, PROs, and music publishers, and advise on the legal frameworks governing the use of musical works across Spotify&rsquo;s service.</div>",
+  "descriptionBodyPlain": "We are seeking an experienced Senior Legal Counsel with deep expertise in music publishing and copyright licensing to join our Legal Licensing Team. In this role, you will partner closely with Business Affairs, Finance, and Product teams to structure, negotiate, draft complex licensing agreements …",
+  "hostedUrl": "https://jobs.lever.co/spotify/142aa205-8ddb-4884-97ba-600d1eb19f4f",
+  "applyUrl": "https://jobs.lever.co/spotify/142aa205-8ddb-4884-97ba-600d1eb19f4f/apply"
+ }
+]

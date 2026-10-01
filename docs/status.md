@@ -1,6 +1,6 @@
 # Job Scout: status
 
-Last updated: 2026-09-30. Phase: **spec published** as [issue #1](https://github.com/Rahat-ch/jobsearchautomations/issues/1). Tickets come next, from `/to-tickets`.
+Last updated: 2026-10-01. Phase: **spec published** as [issue #1](https://github.com/Rahat-ch/jobsearchautomations/issues/1). Tickets come next, from `/to-tickets`.
 
 ## What Job Scout is
 
@@ -214,6 +214,14 @@ The Hermes board design may become the UI later. The proof of concept has no fro
   - The first scan scores everything and sends the top 10 as usual.
 - **Freshness window:** 30 days (config), counted from when Job Scout first sees the lead; New leads first seen longer ago are no longer sent. The freshness sub-score decays by the posting's age (the earlier of published and first seen) over the same 30 days, so old postings rank lower but aren't excluded on day one (decided 2026-09-30).
 - **Closed:** when a posting disappears from its board, the lead is marked Closed quietly, with no message.
+  - Only boards fetched successfully in that scan close leads; a failed fetch closes nothing (built in issue #7, 2026-10-01).
+  - `closed_at` is recorded whatever the lead's status (New, Picked, Applied, Passed, or filtered). A closed lead is never judged or sent, and its `selection_reason` is `closed`.
+  - If the posting is listed again, `closed_at` is cleared and the lead is open again (same key, no new lead).
+- **Reading boards** (issue #7, 2026-10-01; checked against the live Instacart, Palantir and Spotify boards):
+  - Greenhouse: the location comes from `location.name` only, and the workplace type is read from it ("Remote", "Hybrid", "on-site"). The `offices` list is ignored, because Instacart's Canada copies of a role list "Remote - United States" as an office.
+  - Greenhouse pay: `pay_input_ranges` (one range per group of states at Instacart). Ranges titled OTE, commission, bonus or incentive are skipped. The ranges carry no interval, so amounts under $1,000 are taken as hourly. Hourly pay, like Ashby's, doesn't count toward the pay floor: it shows in the message and the lead passes as if pay were unknown.
+  - Lever: live `workplaceType` is `onsite`, `hybrid` or `remote`; `on-site` (the docs' spelling) is also accepted. `country` places the primary location, and `allLocations` are secondary locations. Pay comes from `salaryRange` in USD per year or per month. Lever has no company name, so the company is the site name, as with Ashby.
+  - Location: a non-remote place with no city is "Location unclear" only when it names the US or a metro's region ("United States", "Texas"); a lone city outside the metros ("Stockholm", "San Francisco- Hybrid") fails. Common non-US cities and countries are listed for places with no country code.
 - **Empty day:** a short "no new leads" message with counts: scanned, filtered, unscored.
 - **Crash:** an error workflow sends "Job Scout scan failed" with the node and the error to the same chat.
 - **Suggested contacts:** for a lead from a hiring post, the post's author is the first candidate. X data is stored as handle and reason only.
