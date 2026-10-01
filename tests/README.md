@@ -14,7 +14,7 @@ The tests run the Job Scout workflow's **Daily scan** trigger, its **Applied lin
 
 Every other node runs for real, including the Data Table nodes, which write to `jobscout_test_leads`, `jobscout_test_state` (the signing secret), `jobscout_test_referrals` and `jobscout_test_passes`. Each case clears the `jobscout_test_` tables first and again at the end, so each case's first run makes a new signing secret.
 
-The cases check only external behavior: rows in the test table, and the items that reach the Jev, Claude and Telegram nodes. Two cases also check that those nodes send what they receive (Telegram: text, sound, HTML parse mode, no attribution, the Open posting button on the first row and the Applied, Referral and Pass buttons on the second; Jev: the endpoint, Bearer credential, that **Ask Jev again** sends the same request with retries, and the request body; Claude: the model, credential and a prompt that forbids invented facts), because pinned nodes don't evaluate their own parameters. Another reads the config node's defaults and its sticky note, to check them against the spec.
+The cases check only external behavior: rows in the test table, and the items that reach the Jev, Claude and Telegram nodes. Two cases also check that those nodes send what they receive (Telegram: text, sound, HTML parse mode, no attribution, the Open posting and Search LinkedIn buttons on the first row and the Applied, Referral and Pass buttons on the second; Jev: the endpoint, Bearer credential, that **Ask Jev again** sends the same request with retries, and the request body; Claude: the model, credential and a prompt that forbids invented facts), because pinned nodes don't evaluate their own parameters. Another reads the config node's defaults and its sticky note, to check them against the spec.
 
 Resilience (issue #10):
 
@@ -41,6 +41,11 @@ Pass form (issue #13):
 - A changed character, the Applied signature, another lead's signature and an empty signature get "Invalid link" (403) and write nothing; a valid signature for an unknown lead gets 404.
 - Picked → Passed works; an Applied lead gets 409 and stays Applied. A Passed lead that would have been next in fit order is never sent.
 - A static case checks the form itself: Form Trigger 2.1 on the fixed path `job-scout/pass`, answering through **Show page**, Ignore Bots on, no attribution, hidden `lead` and `sig` fields filled from the query, a required **Reason** dropdown with the ten labels in the Hermes order, an optional note with the Hermes placeholder, the same label-to-code table in **Check Pass form**, and a fourth **Route by trigger** output.
+
+Search LinkedIn (issue #14):
+
+- Every case that checks lead messages also checks the **Search LinkedIn** link: `https://www.linkedin.com/search/results/people/?keywords=` and the lead's company plus the short form of its title, encoded as `encodeURIComponent` does. `role_terms` in `run_tests.py` writes the rule out again (it's in the Daily ping sticky note).
+- One case scans the scoring fixture with a title changed to `Senior Partnerships & Integrations Engineer II, Growth, Payments (Remote)` and checks the literal URL (`scoreco%20Partnerships%20%26%20Integrations%20Engineer`), then checks the rule on six real titles, and that only the nodes that build or describe the link mention LinkedIn.
 
 The expected filter result for every fixture posting is listed by title in `EXPECTED` in `run_tests.py`. Expected fit scores come from `expected_points`, which works out the fit score from the pinned Jev answers, the location basis, the posting's age and the weights, independently of the workflow's code.
 

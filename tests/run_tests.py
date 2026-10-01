@@ -680,6 +680,35 @@ def ran(run_data, node):
     return bool(run_data.get(node))
 
 
+# Search LinkedIn (issue #14): LinkedIn's people search for the company and a short form
+# of the title, the rule in the Daily ping sticky note, written out again here.
+LINKEDIN_SEARCH = "https://www.linkedin.com/search/results/people/?keywords="
+SENIORITY = re.compile(r"^(?:senior|sr\.?|staff|principal|lead|junior|jr\.?|founding|associate)\s+", re.I)
+LEVEL = re.compile(r"\s+(?:i{1,3}|iv|v|l\d{1,2}|\d)$", re.I)
+
+
+def role_terms(title):
+    """The title without brackets, cut at the first comma, "|", spaced hyphen or en/em dash,
+    without leading seniority words or a trailing level; plus the next part if one word is left."""
+    parts = []
+    for part in re.split(r",|\||[–—]|\s-\s", re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", title or "")):
+        p = " ".join(part.split())
+        while SENIORITY.match(p):
+            p = SENIORITY.sub("", p, count=1)
+        p = LEVEL.sub("", p).strip()
+        if p:
+            parts.append(p)
+    if not parts:
+        return ""
+    return parts[0] + " " + parts[1] if len(parts[0].split(" ")) == 1 and len(parts) > 1 else parts[0]
+
+
+def linkedin_url(company, title):
+    keywords = " ".join(f"{company or ''} {role_terms(title)}".split())
+    # encodeURIComponent leaves A-Z a-z 0-9 - _ . ! ~ * ' ( ) as they are.
+    return LINKEDIN_SEARCH + urllib.parse.quote(keywords, safe="-_.!~*'()")
+
+
 def check_lead_messages(leads, rows_by_key):
     secret = signing_secret() if leads else None
     for msg in leads:
@@ -688,6 +717,9 @@ def check_lead_messages(leads, rows_by_key):
         assert msg["button_text"] == "Open posting", msg
         assert msg["button_url"] == ALL_KEYS[key]["jobUrl"], msg
         assert msg["button_url"] == rows_by_key[key]["posting_url"]
+        # Search LinkedIn: the company and the short form of the title, encoded.
+        want = linkedin_url(rows_by_key[key]["company"], rows_by_key[key]["title"])
+        assert msg["linkedin_url"] == want, (msg["linkedin_url"], want)
         # Applied and Referral: signed links on the public base, without the secret.
         for action in ("applied", "referral"):
             path, query = link_query(msg[f"{action}_url"])
@@ -828,10 +860,12 @@ def case_telegram_nodes_send_what_they_receive(wf):
         assert extra.get("parse_mode") == "HTML", f"{name}: parse mode not HTML"
         assert extra.get("appendAttribution") is False, f"{name}: attribution not off"
         assert extra.get("disable_notification") == "={{ $json.silent }}", name
-    # Row 1: Open posting. Row 2: Applied, Referral and Pass, as URL buttons to the signed links.
+    # Row 1: Open posting and Search LinkedIn. Row 2: Applied, Referral and Pass, as URL
+    # buttons to the signed links. At most three buttons per row, for a phone.
     rows = [r["row"]["buttons"] for r in nodes[LEAD_NODE]["parameters"]["inlineKeyboard"]["rows"]]
     got = [[(b["text"], b["additionalFields"]["url"]) for b in row] for row in rows]
-    assert got == [[("={{ $json.button_text }}", "={{ $json.button_url }}")],
+    assert got == [[("={{ $json.button_text }}", "={{ $json.button_url }}"),
+                    ("Search LinkedIn", "={{ $json.linkedin_url }}")],
                    [("Applied", "={{ $json.applied_url }}"), ("Referral", "={{ $json.referral_url }}"),
                     ("Pass", "={{ $json.pass_url }}")]], got
 
@@ -1163,6 +1197,40 @@ def case_pay_found_in_description(wf):
     text = leads[order.index(above)]["text"]
     assert "Pay: $190K–$230K (from the description)" in text, text
     assert [i["lead_key"] for i in items_reaching(run_data, FIT_NODE)] == order
+
+
+def case_search_linkedin_link_encodes_company_and_role(wf):
+    # The scoring fixture with one title changed, so it has "&", commas, a seniority word,
+    # a level and a bracket. Jev's pinned answers stay those of the original title.
+    reset_test_tables()
+    renamed = BY_TITLE["Senior Product Engineer, Growth"]
+    fixture = copy.deepcopy(SCORING_FIXTURE)
+    for job in fixture["jobs"]:
+        if f"ashby:{SCORING_BOARD}:{job['id']}" == renamed:
+            job["title"] = "Senior Partnerships & Integrations Engineer II, Growth, Payments (Remote)"
+    run_data = run_scan(wf, board=SCORING_BOARD, fixture=fixture, judged=list(SKEY))
+    _, leads = sent(run_data)
+    urls = {m["lead_key"]: m["linkedin_url"] for m in leads}
+    assert urls == {
+        renamed: LINKEDIN_SEARCH + "scoreco%20Partnerships%20%26%20Integrations%20Engineer",
+        BY_TITLE["Senior Frontend Engineer, Dashboards"]: LINKEDIN_SEARCH + "scoreco%20Frontend%20Engineer",
+    }, urls
+    check_lead_messages(leads, rows_by_key())
+    # Fixed examples of the rule, from real titles: brackets, "|", a spaced hyphen, a level,
+    # stacked seniority words, and a lone word that takes the next part.
+    for company, title, want in [
+        ("n8n", "Technical Account Manager (US)", "n8n%20Technical%20Account%20Manager"),
+        ("ramp", "Senior Recruiter | G&A", "ramp%20Recruiter%20G%26A"),
+        ("spotify", "Senior Staff Machine Learning Engineer - Content Platform",
+         "spotify%20Machine%20Learning%20Engineer"),
+        ("Instacart", "Senior Data Scientist I - Meals", "Instacart%20Data%20Scientist"),
+        ("ramp", "Director, Customer Experience", "ramp%20Director%20Customer%20Experience"),
+        ("n8n", "Mid-Market Account Executive (US)", "n8n%20Mid-Market%20Account%20Executive"),
+    ]:
+        assert linkedin_url(company, title) == LINKEDIN_SEARCH + want, (title, linkedin_url(company, title))
+    # No LinkedIn calls: the only nodes that mention LinkedIn build the link or describe it.
+    mentions = sorted(n["name"] for n in wf["nodes"] if "linkedin" in json.dumps(n).lower())
+    assert mentions == ["Build lead messages", "Send lead message", "Sticky Note c14e9032"], mentions
 
 
 # ---------- hard filters ----------
@@ -1809,6 +1877,7 @@ CASES = [
     case_crash_alert_names_the_failed_step,
     case_message_shows_fit_breakdown_and_fit_line,
     case_pay_found_in_description,
+    case_search_linkedin_link_encodes_company_and_role,
     case_greenhouse_and_lever_postings_become_leads,
     case_greenhouse_and_lever_location_and_pay_rules,
     case_missing_posting_is_closed_quietly,
