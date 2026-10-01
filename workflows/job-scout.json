@@ -346,7 +346,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// One lead per posting, from every ATS, with the same fields. The ATS and board come\n// from the Board list item that fetched them. `places`, `description` and\n// `salary_mentions` are working fields for later steps (hard filters, Jev, Claude);\n// Apply hard filters removes them before saving. Department and team fields are never\n// read: developer relations roles often sit in Marketing.\nconst now = new Date().toISOString();\nconst leads = [];\n\n// The postings in one Fetch board item, or null when that board's fetch failed.\nfunction boardJobs(ats, response) {\n  const body = response && !response.error ? response.body : undefined;\n  if (ats === 'lever') return Array.isArray(body) ? body : null;\n  return body && Array.isArray(body.jobs) ? body.jobs : null;\n}\n\n// Text helpers.\nconst ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '\"', apos: \"'\", nbsp: ' ', rsquo: '’', lsquo: '‘',\n  rdquo: '”', ldquo: '“', mdash: '—', ndash: '–', hellip: '…', bull: '•', middot: '·' };\nfunction decodeEntities(s) {\n  return String(s || '').replace(/&(#x[0-9a-f]+|#\\d+|[a-z]+);/gi, (m, e) => {\n    if (e[0] === '#') {\n      const code = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);\n      return Number.isFinite(code) ? String.fromCodePoint(code) : m;\n    }\n    return ENTITIES[e.toLowerCase()] ?? m;\n  });\n}\nfunction htmlText(html) {\n  return decodeEntities(String(html || '')\n    .replace(/<\\s*(br|\\/p|\\/li|\\/h\\d|\\/div)\\s*\\/?>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' '));\n}\n\n// Money as short text: 161000 -> \"$161K\", 17.5 -> \"$17.50\", CAD -> \"161K CAD\".\nfunction money(v, cur) {\n  const n = v >= 1000 ? Math.round(v / 100) / 10 + 'K' : v.toFixed(2);\n  return cur === 'USD' ? '$' + n : n;\n}\nfunction rangeText(min, max, cur) {\n  const text = min === max ? money(min, cur) : money(min, cur) + ' – ' + money(max, cur);\n  return cur === 'USD' ? text : text + ' ' + cur;\n}\n\n// Hourly pay counts toward the pay floor at 2,080 hours a year (40 hours x 52 weeks).\n// The message keeps the hourly range and adds the yearly estimate.\nconst HOURS_PER_YEAR = 2080;\nconst yearlyEstimate = (min, max) => ', ≈ ' + rangeText(min, max, 'USD') + ' a year';\n\n// ---------- Ashby ----------\n// Pay is stated as components (Salary, EquityCashValue, Commission, Bonus...). Only\n// base salary in USD, per year, month or hour, counts toward the pay floor. Anything\n// else (other currencies, other intervals, no salary) is unknown pay. Live boards\n// show \"1 YEAR\" and \"1 MONTH\"; \"1 HOUR\" follows the same pattern.\nconst ASHBY_PER_YEAR = { '1 YEAR': 1, '1 MONTH': 12, '1 HOUR': HOURS_PER_YEAR };\nfunction ashbyPay(comp) {\n  if (!comp) return { min: null, max: null, hourly: false };\n  const components = (comp.summaryComponents || [])\n    .concat((comp.compensationTiers || []).flatMap((t) => t.components || []));\n  const salary = components.filter((c) =>\n    c.compensationType === 'Salary' && c.currencyCode === 'USD' && ASHBY_PER_YEAR[c.interval] &&\n    (typeof c.minValue === 'number' || typeof c.maxValue === 'number'));\n  if (!salary.length) return { min: null, max: null, hourly: false };\n  const k = (c) => ASHBY_PER_YEAR[c.interval];\n  const mins = salary.map((c) => Math.round((typeof c.minValue === 'number' ? c.minValue : c.maxValue) * k(c)));\n  const maxes = salary.map((c) => Math.round((typeof c.maxValue === 'number' ? c.maxValue : c.minValue) * k(c)));\n  return { min: Math.min(...mins), max: Math.max(...maxes), hourly: salary.some((c) => c.interval === '1 HOUR') };\n}\n\nfunction ashbyPlace(text, address) {\n  const a = (address && address.postalAddress) || {};\n  return {\n    text: String(text || '').trim(),\n    country: String(a.addressCountry || '').trim(),\n    region: String(a.addressRegion || '').trim(),\n    locality: String(a.addressLocality || '').trim(),\n  };\n}\n\n// Location from workplaceType, location and secondaryLocations (with addresses).\n// isRemote is ignored: Ashby sets it on many hybrid postings.\nfunction ashbyLead(job, board) {\n  if (job.isListed === false) return null;\n  const pay = ashbyPay(job.compensation);\n  return {\n    job_id: String(job.id),\n    company: board,\n    title: String(job.title || '').trim(),\n    location_text: job.location || '',\n    workplace_type: job.workplaceType || '',\n    secondary_locations: (job.secondaryLocations || []).map((l) => l.location).filter(Boolean).join('; '),\n    pay_text: ((job.compensation && job.compensation.compensationTierSummary) || '') +\n      (pay.hourly ? yearlyEstimate(pay.min, pay.max) : ''),\n    pay_min: pay.min,\n    pay_max: pay.max,\n    posting_url: job.jobUrl,\n    apply_url: job.applyUrl,\n    published_at: job.publishedAt || null,\n    places: [ashbyPlace(job.location, job.address)]\n      .concat((job.secondaryLocations || []).map((l) => ashbyPlace(l.location, l.address))),\n    text: job.descriptionPlain ? String(job.descriptionPlain) : htmlText(job.descriptionHtml),\n  };\n}\n\n// ---------- Greenhouse ----------\n// No workplace type field: it comes from the location name (\"United States - Remote\",\n// \"San Francisco- Hybrid\"). Only location.name is used as a place. The offices list is\n// not: Instacart's Canada postings list \"Remote - United States\" as an office.\n// Pay comes from pay_input_ranges (in cents, often one range per group of states).\n// On-target earnings, commission and bonus ranges are skipped. The ranges have no\n// interval; amounts under $1,000 are taken as hourly and counted at 2,080 hours a year.\nfunction greenhouseWorkplace(text) {\n  if (/\\bhybrid\\b/i.test(text)) return 'Hybrid';\n  if (/\\bremote\\b/i.test(text)) return 'Remote';\n  if (/\\bon-?site\\b|\\bin[- ]office\\b|\\bin[- ]person\\b/i.test(text)) return 'OnSite';\n  return '';\n}\nconst NOT_BASE = /\\b(OTE|on[- ]target|commission|bonus|incentive|equity|stock)\\b/i;\nfunction greenhousePay(ranges) {\n  const base = (ranges || []).filter((r) => !NOT_BASE.test(r.title || '') &&\n    (typeof r.min_cents === 'number' || typeof r.max_cents === 'number'))\n    .map((r) => {\n      const min = (typeof r.min_cents === 'number' ? r.min_cents : r.max_cents) / 100;\n      const max = (typeof r.max_cents === 'number' ? r.max_cents : r.min_cents) / 100;\n      return { min, max, cur: String(r.currency_type || '').toUpperCase() };\n    });\n  const texts = [];\n  for (const cur of [...new Set(base.map((r) => r.cur))]) {\n    const group = base.filter((r) => r.cur === cur);\n    const min = Math.min(...group.map((r) => r.min));\n    const max = Math.max(...group.map((r) => r.max));\n    const hourly = max < 1000;\n    texts.push(rangeText(min, max, cur) + (hourly ? ' an hour' : '') +\n      (hourly && cur === 'USD' ? yearlyEstimate(min * HOURS_PER_YEAR, max * HOURS_PER_YEAR) : '') +\n      (group.length > 1 ? ' (by location)' : ''));\n  }\n  const yearly = base.filter((r) => r.cur === 'USD')\n    .map((r) => (r.max < 1000 ? { min: Math.round(r.min * HOURS_PER_YEAR), max: Math.round(r.max * HOURS_PER_YEAR) } : r));\n  return {\n    text: texts.join('; '),\n    min: yearly.length ? Math.min(...yearly.map((r) => r.min)) : null,\n    max: yearly.length ? Math.max(...yearly.map((r) => r.max)) : null,\n  };\n}\nfunction greenhouseLead(job, board) {\n  const location = String((job.location && job.location.name) || '').trim();\n  const pay = greenhousePay(job.pay_input_ranges);\n  return {\n    job_id: String(job.id),\n    company: job.company_name || board,\n    title: String(job.title || '').trim(),\n    location_text: location,\n    workplace_type: greenhouseWorkplace(location),\n    secondary_locations: '',\n    pay_text: pay.text,\n    pay_min: pay.min,\n    pay_max: pay.max,\n    posting_url: job.absolute_url,\n    apply_url: job.absolute_url,\n    published_at: job.first_published || job.updated_at || null,\n    places: [{ text: location, country: '', region: '', locality: '' }],\n    // content is HTML with its own HTML escaped, so decode it once before reading it.\n    text: htmlText(decodeEntities(job.content)),\n  };\n}\n\n// ---------- Lever ----------\n// Live workplaceType values are \"onsite\", \"hybrid\" and \"remote\" (the docs spell it\n// \"on-site\"); both map to Ashby's names, which the location rules use. `country` is\n// the primary location's ISO country code. Pay comes from salaryRange when it is in\n// USD per year, month or hour; salaryDescription is read as description text.\nconst LEVER_WORKPLACE = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'OnSite', 'on-site': 'OnSite' };\nconst LEVER_PER_YEAR = { 'per-year-salary': 1, 'per-month-salary': 12, 'per-hour-wage': HOURS_PER_YEAR };\nconst LEVER_INTERVAL = { 'per-year-salary': ' a year', 'per-month-salary': ' a month', 'per-week-salary': ' a week',\n  'per-day-wage': ' a day', 'per-hour-wage': ' an hour', 'one-time': ' one-time' };\nfunction leverPay(range) {\n  const r = range || {};\n  if (typeof r.min !== 'number' && typeof r.max !== 'number') return { text: '', min: null, max: null };\n  const min = typeof r.min === 'number' ? r.min : r.max;\n  const max = typeof r.max === 'number' ? r.max : r.min;\n  const cur = String(r.currency || '').toUpperCase();\n  const k = cur === 'USD' ? LEVER_PER_YEAR[r.interval] : undefined;\n  return {\n    text: rangeText(min, max, cur) + (LEVER_INTERVAL[r.interval] || '') +\n      (k === HOURS_PER_YEAR ? yearlyEstimate(min * k, max * k) : ''),\n    min: k ? Math.round(min * k) : null,\n    max: k ? Math.round(max * k) : null,\n  };\n}\nfunction leverLead(job, board) {\n  const cat = job.categories || {};\n  const primary = String(cat.location || '').trim();\n  const all = (cat.allLocations || []).map((l) => String(l).trim()).filter(Boolean);\n  const others = all.filter((l) => l !== primary);\n  const pay = leverPay(job.salaryRange);\n  const text = [job.descriptionPlain || htmlText(job.description)]\n    .concat((job.lists || []).flatMap((l) => [l.text, htmlText(l.content)]))\n    .concat([job.salaryDescriptionPlain || htmlText(job.salaryDescription), job.additionalPlain || htmlText(job.additional)])\n    .filter(Boolean).join('\\n');\n  return {\n    job_id: String(job.id),\n    company: board,\n    title: String(job.text || '').trim(),\n    location_text: primary,\n    workplace_type: LEVER_WORKPLACE[String(job.workplaceType || '').toLowerCase()] || '',\n    secondary_locations: others.join('; '),\n    pay_text: pay.text,\n    pay_min: pay.min,\n    pay_max: pay.max,\n    posting_url: job.hostedUrl,\n    apply_url: job.applyUrl || job.hostedUrl,\n    published_at: typeof job.createdAt === 'number' ? new Date(job.createdAt).toISOString() : null,\n    places: [{ text: primary, country: String(job.country || '').trim(), region: '', locality: '' }]\n      .concat(others.map((l) => ({ text: l, country: '', region: '', locality: '' }))),\n    text,\n  };\n}\n\nconst PARSE = { ashby: ashbyLead, greenhouse: greenhouseLead, lever: leverLead };\n\n// ---------- Description for Jev and Claude ----------\n// Unrelated text lowers Jev's accuracy, so the benefits and equal-opportunity text that\n// usually follows the role is cut, blank lines are collapsed, and the rest is capped at\n// DESCRIPTION_MAX characters.\nconst DESCRIPTION_MAX = 6000;\nconst BOILERPLATE_START = /^\\W*(benefits|perks|what we offer|our benefits|equal (employment )?opportunity)\\b|is an equal (employment )?opportunity employer/i;\nfunction trimDescription(text) {\n  const lines = text.split('\\n').map((l) => l.replace(/\\s+/g, ' ').trim());\n  const kept = [];\n  let length = 0;\n  for (const line of lines) {\n    if (length > 800 && BOILERPLATE_START.test(line)) break;\n    if (!line && (!kept.length || !kept[kept.length - 1])) continue;\n    kept.push(line);\n    length += line.length + 1;\n  }\n  let out = kept.join('\\n').trim();\n  if (out.length > DESCRIPTION_MAX) {\n    out = out.slice(0, DESCRIPTION_MAX).replace(/\\s+\\S*$/, '') + ' …';\n  }\n  return out;\n}\n\n// Dollar amounts in the full description that could be a yearly salary, such as\n// \"$150,000 - $190,000\" or \"$160K–$200K\", each with the line it appears in. Jev later\n// picks the base salary among them (or none), only for postings with no structured pay.\nconst AMOUNT = String.raw`\\$\\s?\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\$\\s?\\d{2,3}(?:\\.\\d+)?\\s?[kK]\\b`;\nconst AMOUNT_TO = String.raw`\\$?\\s?\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\$?\\s?\\d{2,3}(?:\\.\\d+)?\\s?[kK]\\b`;\nconst SALARY_SPAN = new RegExp(`(?:${AMOUNT})(?:\\\\s*USD)?(?:\\\\s*(?:-|–|—|to)\\\\s*(?:${AMOUNT_TO})(?:\\\\s*USD)?)?`, 'g');\nfunction amounts(span) {\n  return (span.match(/\\d[\\d,]*(?:\\.\\d+)?\\s?[kK]?/g) || []).map((a) => {\n    const n = parseFloat(a.replace(/,/g, ''));\n    return /k$/i.test(a.trim()) ? n * 1000 : n;\n  });\n}\nfunction salaryMentions(text) {\n  const out = [];\n  const seen = new Set();\n  for (const line of text.split('\\n')) {\n    for (const m of line.matchAll(SALARY_SPAN)) {\n      const span = m[0].trim();\n      const values = amounts(span);\n      const max = Math.max(...values);\n      if (seen.has(span) || max < 30000 || max > 2000000) continue;\n      seen.add(span);\n      out.push({ span, context: line.replace(/\\s+/g, ' ').trim().slice(0, 300) });\n    }\n  }\n  return out.slice(0, 10);\n}\n\n$input.all().forEach((item, i) => {\n  const { ats, board } = $('Board list').itemMatching(i).json;\n  const jobs = boardJobs(ats, item.json);\n  if (!jobs) return; // this board's fetch failed; the other boards still run\n\n  for (const job of jobs) {\n    const lead = PARSE[ats](job, board);\n    if (!lead) continue;\n    const { places, text, ...fields } = lead;\n    leads.push({\n      json: {\n        lead_key: ats + ':' + board + ':' + fields.job_id,\n        ats,\n        board,\n        ...fields,\n        last_seen_at: now,\n        closed_at: null, // a posting seen again is open, even if it was closed earlier\n        places: places.filter((p) => p.text || p.country || p.region || p.locality),\n        description: trimDescription(text),\n        salary_mentions: salaryMentions(text),\n      },\n    });\n  }\n});\n\nreturn leads;\n"
+        "jsCode": "// One lead per posting, from every ATS, with the same fields. The ATS and board come\n// from the Board list item that fetched them. `places`, `description` and\n// `salary_mentions` are working fields for later steps (hard filters, Jev, Claude);\n// Apply hard filters removes them before saving. Department and team fields are never\n// read: developer relations roles often sit in Marketing.\nconst now = new Date().toISOString();\nconst leads = [];\n\n// The postings in one Fetch board item, or null when that board's fetch failed.\nfunction boardJobs(ats, response) {\n  const body = response && !response.error ? response.body : undefined;\n  if (ats === 'lever') return Array.isArray(body) ? body : null;\n  return body && Array.isArray(body.jobs) ? body.jobs : null;\n}\n\n// Text helpers.\nconst ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '\"', apos: \"'\", nbsp: ' ', rsquo: '’', lsquo: '‘',\n  rdquo: '”', ldquo: '“', mdash: '—', ndash: '–', hellip: '…', bull: '•', middot: '·' };\nfunction decodeEntities(s) {\n  return String(s || '').replace(/&(#x[0-9a-f]+|#\\d+|[a-z]+);/gi, (m, e) => {\n    if (e[0] === '#') {\n      const code = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);\n      return Number.isFinite(code) ? String.fromCodePoint(code) : m;\n    }\n    return ENTITIES[e.toLowerCase()] ?? m;\n  });\n}\nfunction htmlText(html) {\n  return decodeEntities(String(html || '')\n    .replace(/<\\s*(br|\\/p|\\/li|\\/h\\d|\\/div)\\s*\\/?>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' '));\n}\n\n// Money as short text: 161000 -> \"$161K\", 17.5 -> \"$17.50\", CAD -> \"161K CAD\".\nfunction money(v, cur) {\n  const n = v >= 1000 ? Math.round(v / 100) / 10 + 'K' : v.toFixed(2);\n  return cur === 'USD' ? '$' + n : n;\n}\nfunction rangeText(min, max, cur) {\n  const text = min === max ? money(min, cur) : money(min, cur) + ' – ' + money(max, cur);\n  return cur === 'USD' ? text : text + ' ' + cur;\n}\n\n// Hourly pay counts toward the pay floor at 2,080 hours a year (40 hours x 52 weeks).\n// The message keeps the hourly range and adds the yearly estimate.\nconst HOURS_PER_YEAR = 2080;\nconst yearlyEstimate = (min, max) => ', ≈ ' + rangeText(min, max, 'USD') + ' a year';\n\n// ---------- Ashby ----------\n// Pay is stated as components (Salary, EquityCashValue, Commission, Bonus...). Only\n// base salary in USD, per year, month or hour, counts toward the pay floor. Anything\n// else (other currencies, other intervals, no salary) is unknown pay. Live boards\n// show \"1 YEAR\" and \"1 MONTH\"; \"1 HOUR\" follows the same pattern.\nconst ASHBY_PER_YEAR = { '1 YEAR': 1, '1 MONTH': 12, '1 HOUR': HOURS_PER_YEAR };\nfunction ashbyPay(comp) {\n  if (!comp) return { min: null, max: null, hourly: false };\n  const components = (comp.summaryComponents || [])\n    .concat((comp.compensationTiers || []).flatMap((t) => t.components || []));\n  const salary = components.filter((c) =>\n    c.compensationType === 'Salary' && c.currencyCode === 'USD' && ASHBY_PER_YEAR[c.interval] &&\n    (typeof c.minValue === 'number' || typeof c.maxValue === 'number'));\n  if (!salary.length) return { min: null, max: null, hourly: false };\n  const k = (c) => ASHBY_PER_YEAR[c.interval];\n  const mins = salary.map((c) => Math.round((typeof c.minValue === 'number' ? c.minValue : c.maxValue) * k(c)));\n  const maxes = salary.map((c) => Math.round((typeof c.maxValue === 'number' ? c.maxValue : c.minValue) * k(c)));\n  return { min: Math.min(...mins), max: Math.max(...maxes), hourly: salary.some((c) => c.interval === '1 HOUR') };\n}\n\nfunction ashbyPlace(text, address) {\n  const a = (address && address.postalAddress) || {};\n  return {\n    text: String(text || '').trim(),\n    country: String(a.addressCountry || '').trim(),\n    region: String(a.addressRegion || '').trim(),\n    locality: String(a.addressLocality || '').trim(),\n  };\n}\n\n// Location from workplaceType, location and secondaryLocations (with addresses).\n// isRemote is ignored: Ashby sets it on many hybrid postings.\nfunction ashbyLead(job, board) {\n  if (job.isListed === false) return null;\n  const pay = ashbyPay(job.compensation);\n  return {\n    job_id: String(job.id),\n    company: board,\n    title: String(job.title || '').trim(),\n    location_text: job.location || '',\n    workplace_type: job.workplaceType || '',\n    secondary_locations: (job.secondaryLocations || []).map((l) => l.location).filter(Boolean).join('; '),\n    pay_text: ((job.compensation && job.compensation.compensationTierSummary) || '') +\n      (pay.hourly ? yearlyEstimate(pay.min, pay.max) : ''),\n    pay_min: pay.min,\n    pay_max: pay.max,\n    posting_url: job.jobUrl,\n    apply_url: job.applyUrl,\n    published_at: job.publishedAt || null,\n    places: [ashbyPlace(job.location, job.address)]\n      .concat((job.secondaryLocations || []).map((l) => ashbyPlace(l.location, l.address))),\n    text: job.descriptionPlain ? String(job.descriptionPlain) : htmlText(job.descriptionHtml),\n  };\n}\n\n// ---------- Greenhouse ----------\n// No workplace type field: it comes from the location name (\"United States - Remote\",\n// \"San Francisco- Hybrid\"). Only location.name is used as a place. The offices list is\n// not: Instacart's Canada postings list \"Remote - United States\" as an office.\n// Pay comes from pay_input_ranges (in cents, often one range per group of states).\n// On-target earnings, commission and bonus ranges are skipped. The ranges have no\n// interval; amounts under $1,000 are taken as hourly and counted at 2,080 hours a year.\nfunction greenhouseWorkplace(text) {\n  if (/\\bhybrid\\b/i.test(text)) return 'Hybrid';\n  if (/\\bremote\\b/i.test(text)) return 'Remote';\n  if (/\\bon-?site\\b|\\bin[- ]office\\b|\\bin[- ]person\\b/i.test(text)) return 'OnSite';\n  return '';\n}\nconst NOT_BASE = /\\b(OTE|on[- ]target|commission|bonus|incentive|equity|stock)\\b/i;\nfunction greenhousePay(ranges) {\n  const base = (ranges || []).filter((r) => !NOT_BASE.test(r.title || '') &&\n    (typeof r.min_cents === 'number' || typeof r.max_cents === 'number'))\n    .map((r) => {\n      const min = (typeof r.min_cents === 'number' ? r.min_cents : r.max_cents) / 100;\n      const max = (typeof r.max_cents === 'number' ? r.max_cents : r.min_cents) / 100;\n      return { min, max, cur: String(r.currency_type || '').toUpperCase() };\n    });\n  const texts = [];\n  for (const cur of [...new Set(base.map((r) => r.cur))]) {\n    const group = base.filter((r) => r.cur === cur);\n    const min = Math.min(...group.map((r) => r.min));\n    const max = Math.max(...group.map((r) => r.max));\n    const hourly = max < 1000;\n    texts.push(rangeText(min, max, cur) + (hourly ? ' an hour' : '') +\n      (hourly && cur === 'USD' ? yearlyEstimate(min * HOURS_PER_YEAR, max * HOURS_PER_YEAR) : '') +\n      (group.length > 1 ? ' (by location)' : ''));\n  }\n  const yearly = base.filter((r) => r.cur === 'USD')\n    .map((r) => (r.max < 1000 ? { min: Math.round(r.min * HOURS_PER_YEAR), max: Math.round(r.max * HOURS_PER_YEAR) } : r));\n  return {\n    text: texts.join('; '),\n    min: yearly.length ? Math.min(...yearly.map((r) => r.min)) : null,\n    max: yearly.length ? Math.max(...yearly.map((r) => r.max)) : null,\n  };\n}\nfunction greenhouseLead(job, board) {\n  const location = String((job.location && job.location.name) || '').trim();\n  const pay = greenhousePay(job.pay_input_ranges);\n  return {\n    job_id: String(job.id),\n    company: job.company_name || board,\n    title: String(job.title || '').trim(),\n    location_text: location,\n    workplace_type: greenhouseWorkplace(location),\n    secondary_locations: '',\n    pay_text: pay.text,\n    pay_min: pay.min,\n    pay_max: pay.max,\n    posting_url: job.absolute_url,\n    apply_url: job.absolute_url,\n    published_at: job.first_published || job.updated_at || null,\n    places: [{ text: location, country: '', region: '', locality: '' }],\n    // content is HTML with its own HTML escaped, so decode it once before reading it.\n    text: htmlText(decodeEntities(job.content)),\n  };\n}\n\n// ---------- Lever ----------\n// Live workplaceType values are \"onsite\", \"hybrid\" and \"remote\" (the docs spell it\n// \"on-site\"); both map to Ashby's names, which the location rules use. `country` is\n// the primary location's ISO country code. Pay comes from salaryRange when it is in\n// USD per year, month or hour; salaryDescription is read as description text.\nconst LEVER_WORKPLACE = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'OnSite', 'on-site': 'OnSite' };\nconst LEVER_PER_YEAR = { 'per-year-salary': 1, 'per-month-salary': 12, 'per-hour-wage': HOURS_PER_YEAR };\nconst LEVER_INTERVAL = { 'per-year-salary': ' a year', 'per-month-salary': ' a month', 'per-week-salary': ' a week',\n  'per-day-wage': ' a day', 'per-hour-wage': ' an hour', 'one-time': ' one-time' };\nfunction leverPay(range) {\n  const r = range || {};\n  if (typeof r.min !== 'number' && typeof r.max !== 'number') return { text: '', min: null, max: null };\n  const min = typeof r.min === 'number' ? r.min : r.max;\n  const max = typeof r.max === 'number' ? r.max : r.min;\n  const cur = String(r.currency || '').toUpperCase();\n  const k = cur === 'USD' ? LEVER_PER_YEAR[r.interval] : undefined;\n  return {\n    text: rangeText(min, max, cur) + (LEVER_INTERVAL[r.interval] || '') +\n      (k === HOURS_PER_YEAR ? yearlyEstimate(min * k, max * k) : ''),\n    min: k ? Math.round(min * k) : null,\n    max: k ? Math.round(max * k) : null,\n  };\n}\nfunction leverLead(job, board) {\n  const cat = job.categories || {};\n  const primary = String(cat.location || '').trim();\n  const all = (cat.allLocations || []).map((l) => String(l).trim()).filter(Boolean);\n  const others = all.filter((l) => l !== primary);\n  const pay = leverPay(job.salaryRange);\n  const text = [job.descriptionPlain || htmlText(job.description)]\n    .concat((job.lists || []).flatMap((l) => [l.text, htmlText(l.content)]))\n    .concat([job.salaryDescriptionPlain || htmlText(job.salaryDescription), job.additionalPlain || htmlText(job.additional)])\n    .filter(Boolean).join('\\n');\n  return {\n    job_id: String(job.id),\n    company: board,\n    title: String(job.text || '').trim(),\n    location_text: primary,\n    workplace_type: LEVER_WORKPLACE[String(job.workplaceType || '').toLowerCase()] || '',\n    secondary_locations: others.join('; '),\n    pay_text: pay.text,\n    pay_min: pay.min,\n    pay_max: pay.max,\n    posting_url: job.hostedUrl,\n    apply_url: job.applyUrl || job.hostedUrl,\n    published_at: typeof job.createdAt === 'number' ? new Date(job.createdAt).toISOString() : null,\n    places: [{ text: primary, country: String(job.country || '').trim(), region: '', locality: '' }]\n      .concat(others.map((l) => ({ text: l, country: '', region: '', locality: '' }))),\n    text,\n  };\n}\n\nconst PARSE = { ashby: ashbyLead, greenhouse: greenhouseLead, lever: leverLead };\n\n// ---------- Description for Jev and Claude ----------\n// Unrelated text lowers Jev's accuracy, so the benefits and equal-opportunity text that\n// usually follows the role is cut, blank lines are collapsed, and the rest is capped at\n// DESCRIPTION_MAX characters.\nconst DESCRIPTION_MAX = 6000;\nconst BOILERPLATE_START = /^\\W*(benefits|perks|what we offer|our benefits|equal (employment )?opportunity)\\b|is an equal (employment )?opportunity employer/i;\nfunction trimDescription(text) {\n  const lines = text.split('\\n').map((l) => l.replace(/\\s+/g, ' ').trim());\n  const kept = [];\n  let length = 0;\n  for (const line of lines) {\n    if (length > 800 && BOILERPLATE_START.test(line)) break;\n    if (!line && (!kept.length || !kept[kept.length - 1])) continue;\n    kept.push(line);\n    length += line.length + 1;\n  }\n  let out = kept.join('\\n').trim();\n  if (out.length > DESCRIPTION_MAX) {\n    out = out.slice(0, DESCRIPTION_MAX).replace(/\\s+\\S*$/, '') + ' …';\n  }\n  return out;\n}\n\n// Dollar amounts in the full description that could be a yearly salary, such as\n// \"$150,000 - $190,000\" or \"$160K–$200K\", each with the line it appears in. Jev later\n// picks the base salary among them (or none), only for postings with no structured pay.\nconst AMOUNT = String.raw`\\$\\s?\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\$\\s?\\d{2,3}(?:\\.\\d+)?\\s?[kK]\\b`;\nconst AMOUNT_TO = String.raw`\\$?\\s?\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\$?\\s?\\d{2,3}(?:\\.\\d+)?\\s?[kK]\\b`;\nconst SALARY_SPAN = new RegExp(`(?:${AMOUNT})(?:\\\\s*USD)?(?:\\\\s*(?:-|–|—|to)\\\\s*(?:${AMOUNT_TO})(?:\\\\s*USD)?)?`, 'g');\nfunction amounts(span) {\n  return (span.match(/\\d[\\d,]*(?:\\.\\d+)?\\s?[kK]?/g) || []).map((a) => {\n    const n = parseFloat(a.replace(/,/g, ''));\n    return /k$/i.test(a.trim()) ? n * 1000 : n;\n  });\n}\nfunction salaryMentions(text) {\n  const out = [];\n  const seen = new Set();\n  for (const line of text.split('\\n')) {\n    for (const m of line.matchAll(SALARY_SPAN)) {\n      const span = m[0].trim();\n      const values = amounts(span);\n      const max = Math.max(...values);\n      if (seen.has(span) || max < 30000 || max > 2000000) continue;\n      seen.add(span);\n      out.push({ span, context: line.replace(/\\s+/g, ' ').trim().slice(0, 300) });\n    }\n  }\n  return out.slice(0, 10);\n}\n\nconst failed = [];\n$input.all().forEach((item, i) => {\n  const { ats, board } = $('Board list').itemMatching(i).json;\n  const jobs = boardJobs(ats, item.json);\n  if (!jobs) {\n    // This board's fetch failed; the other boards still run.\n    failed.push(ats + ':' + board + ' (' + String((item.json.error && item.json.error.message) || 'no posting list') + ')');\n    return;\n  }\n\n  for (const job of jobs) {\n    const lead = PARSE[ats](job, board);\n    if (!lead) continue;\n    const { places, text, ...fields } = lead;\n    leads.push({\n      json: {\n        lead_key: ats + ':' + board + ':' + fields.job_id,\n        ats,\n        board,\n        ...fields,\n        last_seen_at: now,\n        closed_at: null, // a posting seen again is open, even if it was closed earlier\n        places: places.filter((p) => p.text || p.country || p.region || p.locality),\n        description: trimDescription(text),\n        salary_mentions: salaryMentions(text),\n      },\n    });\n  }\n});\n\n// If no board could be fetched at all, the scan has nothing to work with: fail, so the\n// crash alert says so instead of a misleading \"no new leads\".\nif (failed.length && failed.length === $input.all().length) {\n  throw new Error('No board could be fetched: ' + failed.join('; ').slice(0, 400));\n}\n\nreturn leads;\n"
       }
     },
     {
@@ -448,7 +448,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5060,
+        5940,
         400
       ],
       "parameters": {
@@ -460,38 +460,16 @@
     {
       "id": "2c67b0d8-5535-4536-8edc-3b862c41bdfd",
       "name": "Build header",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.5,
-      "executeOnce": true,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        5280,
+        6160,
         400
       ],
       "parameters": {
-        "mode": "manual",
-        "includeOtherFields": false,
-        "assignments": {
-          "assignments": [
-            {
-              "id": "header-count",
-              "name": "lead_count",
-              "value": "={{ $('Build lead messages').all().length }}",
-              "type": "number"
-            },
-            {
-              "id": "header-text",
-              "name": "text",
-              "value": "=Job Scout: {{ $('Build lead messages').all().length }} new {{ $('Build lead messages').all().length === 1 ? 'lead' : 'leads' }} today",
-              "type": "string"
-            },
-            {
-              "id": "header-silent",
-              "name": "silent",
-              "value": false,
-              "type": "boolean"
-            }
-          ]
-        }
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The first message of the daily ping. With leads to send, it says how many and makes a\n// sound. With none, it is the whole ping: one silent \"no new leads\" message with\n// today's counts. Both say how many leads Jev couldn't score; those are judged again on\n// the next scan.\n//   scanned:  postings fetched from the boards in this scan\n//   filtered: of those, the ones that failed a hard rule, including a salary Jev found\n//             in the description below the pay floor\n//   unscored: leads whose Jev request still failed after the retries\nconst leadCount = $('Build lead messages').isExecuted ? $('Build lead messages').all().length : 0;\n\nconst results = new Map($('Apply hard filters').all().map((i) => [i.json.lead_key, i.json.filter_result]));\nfor (const { json } of $('Score and select').all()) {\n  if (json.lead_key && results.has(json.lead_key)) results.set(json.lead_key, json.filter_result);\n}\nconst scanned = results.size;\nconst filtered = [...results.values()].filter((r) => r !== 'passed').length;\nconst unscored = $('Read Jev answers').isExecuted\n  ? $('Read Jev answers').all().filter((i) => i.json.scoring_state === 'unscored').length\n  : 0;\n\nconst retrying = unscored + \" couldn't be scored (retrying next scan)\";\nlet text;\nif (leadCount > 0) {\n  text = 'Job Scout: ' + leadCount + ' new ' + (leadCount === 1 ? 'lead' : 'leads') + ' today';\n  if (unscored) text += ' · ' + retrying;\n} else {\n  text = 'Job Scout: no new leads today\\n' +\n    scanned + ' ' + (scanned === 1 ? 'posting' : 'postings') + ' scanned · ' + filtered + ' filtered out · ' +\n    (unscored ? retrying : \"0 couldn't be scored\");\n}\nreturn [{ json: { text, silent: leadCount === 0, lead_count: leadCount, scanned, filtered, unscored } }];\n"
       }
     },
     {
@@ -501,7 +479,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        5500,
+        6380,
         400
       ],
       "parameters": {
@@ -529,13 +507,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5720,
+        6600,
         400
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// The header node outputs Telegram's reply, so pick the lead messages back up.\nreturn $('Build lead messages').all().map((item) => ({ json: item.json }));\n"
+        "jsCode": "// The header node outputs Telegram's reply, so pick the lead messages back up. On an\n// empty day there are none, and the ping ends with the header.\nif (!$('Build lead messages').isExecuted) return [];\nreturn $('Build lead messages').all().map((item) => ({ json: item.json }));\n"
       }
     },
     {
@@ -548,7 +526,7 @@
       "maxTries": 3,
       "waitBetweenTries": 3000,
       "position": [
-        6160,
+        7040,
         500
       ],
       "parameters": {
@@ -592,7 +570,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        6380,
+        7260,
         500
       ],
       "parameters": {
@@ -651,7 +629,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        6600,
+        7480,
         500
       ],
       "parameters": {
@@ -666,7 +644,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        5940,
+        6820,
         400
       ],
       "parameters": {
@@ -684,7 +662,7 @@
         20
       ],
       "parameters": {
-        "content": "## Job Scout: daily scan\n\nEvery morning this path scans the Ashby, Greenhouse and Lever boards listed in **Job Scout config**, saves one lead per posting in the `leads` Data Table, marks leads whose postings are gone as closed, scores the leads that pass the hard filters, and sends the best ones to Telegram.\n\n**Setup**\n1. Create a bot with @BotFather and pick its credential on **Send header** and **Send lead message**.\n2. Add a Bearer Auth credential with your TypeSafe API key on **Ask Jev**, and an Anthropic credential on **Write fit line**.\n3. Fill in **Job Scout config** (see the note below it), including your **profileSummary**.\n4. Publish the workflow.\n\nThe `leads` table is created on the first run if it doesn't exist. Job Scout never applies for jobs or contacts anyone.\n",
+        "content": "## Job Scout: daily scan\n\nEvery morning this path scans the Ashby, Greenhouse and Lever boards listed in **Job Scout config**, saves one lead per posting in the `leads` Data Table, marks leads whose postings are gone as closed, scores the leads that pass the hard filters, and sends the best ones to Telegram.\n\n**Setup**\n1. Create a bot with @BotFather and pick its credential on **Send header**, **Send lead message** and **Send crash alert**.\n2. Add a Bearer Auth credential with your TypeSafe API key on **Ask Jev** and **Ask Jev again**, and an Anthropic credential on **Write fit line**.\n3. Fill in **Job Scout config** (see the note below it), including your **profileSummary**.\n4. Publish the workflow.\n\nThe `leads` table is created on the first run if it doesn't exist. Job Scout never applies for jobs or contacts anyone.\n",
         "color": 4,
         "width": 460,
         "height": 320
@@ -728,14 +706,14 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        5020,
+        5900,
         640
       ],
       "parameters": {
-        "content": "## Daily ping\n\n- **Pick leads to send** chooses leads with status `new`, not closed, `filter_result` `passed`, a role family, a fit score of at least **minFitScore**, first seen within the freshness window and with no `sent_at`, highest fit score first, up to `dailyCap`. Leads over the cap stay New and compete again on later scans. If there are none, nothing is sent.\n- **Send header** sends \"Job Scout: N new leads today\" with sound.\n- Each lead goes out as its own silent message with an **Open posting** button, one per second. It shows the pay text (or a salary found in the description, or \"Pay not listed\"), the location or \"Location unclear\", the fit score with its points per sub-score, and Claude's fit line.\n- **Mark sent** sets `sent_at` and saves the fit line right after each message, so no lead is sent twice.\n\nBoth Telegram nodes use HTML parse mode and have the n8n attribution line turned off.\n",
+        "content": "## Daily ping\n\n- **Pick leads to send** chooses leads with status `new`, not closed, `filter_result` `passed`, a role family, a fit score of at least **minFitScore**, first seen within the freshness window and with no `sent_at`, highest fit score first, up to `dailyCap`. Leads over the cap stay New and compete again on later scans.\n- **Send header** sends \"Job Scout: N new leads today\" with sound. When Jev couldn't score some leads, it adds \"· N couldn't be scored (retrying next scan)\".\n- On a day with nothing to send, it sends one silent message instead: \"Job Scout: no new leads today\", with how many postings were scanned, how many were filtered out, and how many couldn't be scored.\n- Each lead goes out as its own silent message with an **Open posting** button, one per second. It shows the pay text (or a salary found in the description, or \"Pay not listed\"), the location or \"Location unclear\", the fit score with its points per sub-score, and Claude's fit line (left out if Claude failed for that lead).\n- **Mark sent** sets `sent_at` and saves the fit line right after each message, so no lead is sent twice.\n\nBoth Telegram nodes use HTML parse mode and have the n8n attribution line turned off.\n",
         "color": 5,
         "width": 560,
-        "height": 300
+        "height": 680
       }
     },
     {
@@ -775,6 +753,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "executeOnce": true,
+      "alwaysOutputData": true,
       "position": [
         2860,
         400
@@ -864,9 +843,6 @@
       "name": "Ask Jev",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 2000,
       "onError": "continueRegularOutput",
       "position": [
         3520,
@@ -904,11 +880,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3740,
+        4400,
         300
       ],
       "parameters": {
-        "jsCode": "// Turns each Jev response into stored judgments, each normalized to 0-1:\n//   sub_role_family: the probability that the job is in one of the configured families\n//   sub_stack:       stack overlap; when the posting names no stack, it counts as 0.5\n//   sub_domain:      domain overlap\n// The seniority answer is stored and turned into a sub-score in Score and select, so\n// changing targetSeniority needs no new Jev calls. A response without valid answers\n// (the request failed after its retries) leaves the lead unscored: it isn't sent, and\n// it is judged again on the next scan.\nconst requests = $('Build Jev requests').all();\nconst responses = $input.all();\nif (requests.length !== responses.length) {\n  throw new Error(`Jev returned ${responses.length} responses for ${requests.length} requests`);\n}\nconst NONE = 'None of these';\nconst round = (n, d = 3) => Math.round(n * 10 ** d) / 10 ** d;\nconst probs = (p) => Object.fromEntries(Object.entries(p || {}).map(([k, v]) => [k, round(v)]));\nconst top = (q) => q.criteria.length - 1;\n\n// \"$150,000 - $190,000\" or \"$160K–$200K\" -> [150000, 190000]\nfunction amounts(span) {\n  return (span.match(/\\d[\\d,]*(?:\\.\\d+)?\\s?[kK]?/g) || []).map((a) => {\n    const n = parseFloat(a.replace(/,/g, ''));\n    return /k$/i.test(a.trim()) ? n * 1000 : n;\n  });\n}\n\nreturn responses.map((item, i) => {\n  const req = requests[i].json;\n  const q = req.jev_body.questions;\n  const a = (item.json && item.json.answers) || {};\n  const valid = ['role_family', 'stack_fit', 'names_stack', 'seniority', 'domain_fit']\n    .concat(q.base_salary ? ['base_salary'] : [])\n    .every((id) => a[id] && a[id].type === q[id].type);\n  if (!valid) return { json: { id: req.id, scoring_state: 'unscored' } };\n\n  const namesStack = a.names_stack.noul;\n  const stack = namesStack * (a.stack_fit.score / top(q.stack_fit)) + (1 - namesStack) * 0.5;\n  let pay = { text: null, min: null, max: null };\n  if (a.base_salary && a.base_salary.choice !== 'none') {\n    const values = amounts(a.base_salary.choice);\n    pay = { text: a.base_salary.choice, min: Math.min(...values), max: Math.max(...values) };\n  }\n  const answers = {\n    role_family: { choice: a.role_family.choice, confidence: round(a.role_family.confidence), p: probs(a.role_family.probabilities) },\n    stack_fit: { score: round(a.stack_fit.score), confidence: round(a.stack_fit.confidence) },\n    names_stack: { noul: round(namesStack) },\n    seniority: { choice: a.seniority.choice, confidence: round(a.seniority.confidence), p: probs(a.seniority.probabilities) },\n    domain_fit: { score: round(a.domain_fit.score), confidence: round(a.domain_fit.confidence) },\n  };\n  if (a.base_salary) answers.base_salary = { choice: a.base_salary.choice, confidence: round(a.base_salary.confidence) };\n\n  return {\n    json: {\n      id: req.id,\n      scoring_state: 'scored',\n      scoring_fingerprint: req.scoring_fingerprint,\n      scored_at: new Date().toISOString(),\n      jev_model: item.json.model || req.jev_body.model,\n      jev_answers: JSON.stringify(answers),\n      role_family: a.role_family.choice,\n      seniority_level: a.seniority.choice,\n      sub_role_family: round(1 - ((a.role_family.probabilities || {})[NONE] || 0)),\n      sub_stack: round(stack),\n      sub_domain: round(a.domain_fit.score / top(q.domain_fit)),\n      pay_extracted_text: pay.text,\n      pay_extracted_min: pay.min,\n      pay_extracted_max: pay.max,\n    },\n  };\n});\n",
+        "jsCode": "// Turns each Jev response into stored judgments, each normalized to 0-1:\n//   sub_role_family: the probability that the job is in one of the configured families\n//   sub_stack:       stack overlap; when the posting names no stack, it counts as 0.5\n//   sub_domain:      domain overlap\n// The seniority answer is stored and turned into a sub-score in Score and select, so\n// changing targetSeniority needs no new Jev calls.\n// Ask Jev tries each request once. The ones that failed were tried again by Ask Jev\n// again, and those responses replace the failed ones here. A response that still has\n// no valid answers leaves the lead unscored: it isn't sent, the header counts it, and\n// it is judged again on the next scan.\nconst requests = $('Build Jev requests').all();\nconst responses = $('Ask Jev').all().map((i) => i.json);\nif (requests.length !== responses.length) {\n  throw new Error(`Jev returned ${responses.length} responses for ${requests.length} requests`);\n}\nif ($('Ask Jev again').isExecuted) {\n  const retried = $('Jev requests to retry').all();\n  const again = $('Ask Jev again').all();\n  if (retried.length !== again.length) {\n    throw new Error(`Jev returned ${again.length} responses for ${retried.length} retried requests`);\n  }\n  const byKey = new Map(retried.map((r, i) => [r.json.lead_key, again[i].json]));\n  requests.forEach((r, i) => {\n    if (byKey.has(r.json.lead_key)) responses[i] = byKey.get(r.json.lead_key);\n  });\n}\nconst NONE = 'None of these';\nconst round = (n, d = 3) => Math.round(n * 10 ** d) / 10 ** d;\nconst probs = (p) => Object.fromEntries(Object.entries(p || {}).map(([k, v]) => [k, round(v)]));\nconst top = (q) => q.criteria.length - 1;\n\n// \"$150,000 - $190,000\" or \"$160K–$200K\" -> [150000, 190000]\nfunction amounts(span) {\n  return (span.match(/\\d[\\d,]*(?:\\.\\d+)?\\s?[kK]?/g) || []).map((a) => {\n    const n = parseFloat(a.replace(/,/g, ''));\n    return /k$/i.test(a.trim()) ? n * 1000 : n;\n  });\n}\n\nreturn responses.map((json, i) => {\n  const item = { json };\n  const req = requests[i].json;\n  const q = req.jev_body.questions;\n  const a = (item.json && item.json.answers) || {};\n  const valid = ['role_family', 'stack_fit', 'names_stack', 'seniority', 'domain_fit']\n    .concat(q.base_salary ? ['base_salary'] : [])\n    .every((id) => a[id] && a[id].type === q[id].type);\n  if (!valid) return { json: { id: req.id, scoring_state: 'unscored' } };\n\n  const namesStack = a.names_stack.noul;\n  const stack = namesStack * (a.stack_fit.score / top(q.stack_fit)) + (1 - namesStack) * 0.5;\n  let pay = { text: null, min: null, max: null };\n  if (a.base_salary && a.base_salary.choice !== 'none') {\n    const values = amounts(a.base_salary.choice);\n    pay = { text: a.base_salary.choice, min: Math.min(...values), max: Math.max(...values) };\n  }\n  const answers = {\n    role_family: { choice: a.role_family.choice, confidence: round(a.role_family.confidence), p: probs(a.role_family.probabilities) },\n    stack_fit: { score: round(a.stack_fit.score), confidence: round(a.stack_fit.confidence) },\n    names_stack: { noul: round(namesStack) },\n    seniority: { choice: a.seniority.choice, confidence: round(a.seniority.confidence), p: probs(a.seniority.probabilities) },\n    domain_fit: { score: round(a.domain_fit.score), confidence: round(a.domain_fit.confidence) },\n  };\n  if (a.base_salary) answers.base_salary = { choice: a.base_salary.choice, confidence: round(a.base_salary.confidence) };\n\n  return {\n    json: {\n      id: req.id,\n      scoring_state: 'scored',\n      scoring_fingerprint: req.scoring_fingerprint,\n      scored_at: new Date().toISOString(),\n      jev_model: item.json.model || req.jev_body.model,\n      jev_answers: JSON.stringify(answers),\n      role_family: a.role_family.choice,\n      seniority_level: a.seniority.choice,\n      sub_role_family: round(1 - ((a.role_family.probabilities || {})[NONE] || 0)),\n      sub_stack: round(stack),\n      sub_domain: round(a.domain_fit.score / top(q.domain_fit)),\n      pay_extracted_text: pay.text,\n      pay_extracted_min: pay.min,\n      pay_extracted_max: pay.max,\n    },\n  };\n});\n",
         "mode": "runOnceForAllItems",
         "language": "javaScript"
       }
@@ -920,7 +896,7 @@
       "typeVersion": 1.1,
       "alwaysOutputData": true,
       "position": [
-        3960,
+        4620,
         300
       ],
       "parameters": {
@@ -953,8 +929,9 @@
       "name": "Score and select",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
+      "alwaysOutputData": true,
       "position": [
-        4180,
+        4840,
         400
       ],
       "parameters": {
@@ -970,7 +947,7 @@
       "typeVersion": 1.1,
       "alwaysOutputData": true,
       "position": [
-        4400,
+        5060,
         400
       ],
       "parameters": {
@@ -1077,8 +1054,9 @@
       "name": "Pick leads to send",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
+      "alwaysOutputData": true,
       "position": [
-        4620,
+        5280,
         400
       ],
       "parameters": {
@@ -1097,7 +1075,7 @@
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput",
       "position": [
-        4840,
+        5720,
         400
       ],
       "parameters": {
@@ -1141,7 +1119,7 @@
         600
       ],
       "parameters": {
-        "content": "## Scoring\n\nOnly leads that passed the filters, are New and unsent, and were first seen within **freshnessWindowDays** are scored.\n\n- **Build Jev requests** builds one request per lead for TypeSafe's Jev, with every question in it: role family (from the title and duties, never the department), stack fit and domain fit against **profileSummary**, whether the posting names a stack, and the seniority level. For a posting with no structured pay, a regex finds dollar amounts in the description and Jev picks the base salary among them, or none.\n- A lead is judged again only when its request changes: a new profile summary, role families, model, or posting text. Weights, **targetSeniority** and **minFitScore** are applied in code, so editing them costs no Jev calls.\n- **Ask Jev** uses a Bearer Auth credential with your TypeSafe API key (console.typesafe.ai/keys). It retries failed requests; a lead whose request still fails is saved as unscored, isn't sent, and is judged again on the next scan.\n- **Score and select** combines the sub-scores with **weights** into a fit score out of 100, every scan. Location, freshness and referral are computed in code. A salary Jev found in the description that tops out below **payFloor** sets `filter_result` to `pay_floor`.\n- A lead whose role family is \"None of these\" (Jev's top answer) is never sent, whatever its fit score.\n- Each lead's `selection_reason` says what holds it back: `closed`, `unscored`, `pay_floor`, `no_role_family`, `window_passed` (first seen too long ago), `below_min_fit`, or `eligible`.\n- **Pick leads to send** takes the eligible leads, highest fit first, up to **dailyCap**.\n- **Write fit line** asks Claude (Anthropic credential) for one sentence on why each picked lead fits, using only the posting and the profile summary. Claude runs only for leads that are sent.\n\nJev costs about $0.0002 per judged lead. Each lead's sub-scores, fit score, Jev's raw answers and the fit line are saved in the `leads` table.\n",
+        "content": "## Scoring\n\nOnly leads that passed the filters, are New and unsent, and were first seen within **freshnessWindowDays** are scored.\n\n- **Build Jev requests** builds one request per lead for TypeSafe's Jev, with every question in it: role family (from the title and duties, never the department), stack fit and domain fit against **profileSummary**, whether the posting names a stack, and the seniority level. For a posting with no structured pay, a regex finds dollar amounts in the description and Jev picks the base salary among them, or none.\n- A lead is judged again only when its request changes: a new profile summary, role families, model, or posting text. Weights, **targetSeniority** and **minFitScore** are applied in code, so editing them costs no Jev calls.\n- **Ask Jev** uses a Bearer Auth credential with your TypeSafe API key (console.typesafe.ai/keys). It sends each request once. The requests that fail go to **Ask Jev again** for a second try, and if the first of those fails too, all of them are tried up to twice more, 5 seconds apart. A lead whose request still fails is saved as unscored, isn't sent, is counted in the header, and is judged again on the next scan.\n- **Score and select** combines the sub-scores with **weights** into a fit score out of 100, every scan. Location, freshness and referral are computed in code. A salary Jev found in the description that tops out below **payFloor** sets `filter_result` to `pay_floor`.\n- A lead whose role family is \"None of these\" (Jev's top answer) is never sent, whatever its fit score.\n- Each lead's `selection_reason` says what holds it back: `closed`, `unscored`, `pay_floor`, `no_role_family`, `window_passed` (first seen too long ago), `below_min_fit`, or `eligible`.\n- **Pick leads to send** takes the eligible leads, highest fit first, up to **dailyCap**.\n- **Write fit line** asks Claude (Anthropic credential) for one sentence on why each picked lead fits, using only the posting and the profile summary. Claude runs only for leads that are sent. If Claude fails for a lead, the lead goes out without a fit line.\n\nJev costs about $0.0002 per judged lead. Each lead's sub-scores, fit score, Jev's raw answers and the fit line are saved in the `leads` table.\n",
         "height": 640,
         "width": 760,
         "color": 4
@@ -1332,6 +1310,201 @@
         "color": 7,
         "width": 640,
         "height": 260
+      }
+    },
+    {
+      "id": "79999c08-d650-4894-99e0-669a11cb6176",
+      "name": "Any Jev failures?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3740,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "jev-failed",
+              "leftValue": "={{ $('Ask Jev').all().some((i) => !(i.json && i.json.answers)) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0a45d385-99bf-4073-894c-83759f3b16d7",
+      "name": "Jev requests to retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3960,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The Jev requests whose first try failed (Ask Jev returned no answers), for one\n// more try in Ask Jev again. Ask Jev returns one item per request, in order.\nconst responses = $('Ask Jev').all();\nreturn $('Build Jev requests').all()\n  .filter((req, i) => !(responses[i] && responses[i].json && responses[i].json.answers))\n  .map((req) => ({ json: req.json }));\n"
+      }
+    },
+    {
+      "id": "539c5055-d7ac-4aa4-88ba-dba537e08364",
+      "name": "Ask Jev again",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "position": [
+        4180,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.typesafe.ai/v1/systemone",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.jev_body) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 10,
+              "batchInterval": 500
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "zLIYtH0bF7re33Wo",
+          "name": "Job Scout TypeSafe"
+        }
+      }
+    },
+    {
+      "id": "944aab96-f3eb-49ff-b2e0-ac1688efa56c",
+      "name": "Any leads to send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        5500,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-lead",
+              "leftValue": "={{ $json.lead_key }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "adfd9dba-b382-44d9-90dc-576d6434e0ec",
+      "name": "Scan crashed",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        1500
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "74da3f13-dfb3-42a0-960a-fee165f536ee",
+      "name": "Build crash alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        1500
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The crash alert: which step failed and the error. n8n runs this path when a published\n// run of this workflow fails, because the workflow has an Error Trigger and no other\n// error workflow is set (see the Crash alert note).\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\nconst execution = $json.execution || {};\nconst error = execution.error || ($json.trigger && $json.trigger.error) || {};\nconst step = (error.node && error.node.name) || execution.lastNodeExecuted || 'an unknown step';\nlet message = String(error.message || 'no error message').replace(/\\s+/g, ' ').trim();\nif (message.length > 500) message = message.slice(0, 500) + '…';\nconst started = (execution.executionContext && execution.executionContext.triggerNode) || {};\nconst what = started.type === 'n8n-nodes-base.scheduleTrigger' ? 'scan'\n  : started.name ? '\"' + started.name + '\" run' : 'run';\n\nconst lines = ['Job Scout ' + what + ' failed at ' + esc(step) + ': ' + esc(message)];\nif (execution.url) lines.push('Execution: ' + esc(execution.url));\nreturn [{ json: { text: lines.join('\\n'), silent: false } }];\n"
+      }
+    },
+    {
+      "id": "be55ce00-c181-41b1-beaf-e15bbcf3ea72",
+      "name": "Send crash alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "position": [
+        440,
+        1500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Job Scout config').params.assignments.assignments.find((a) => a.name === 'telegramChatId').value }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "none",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_notification": "={{ $json.silent }}"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "dNZCpYwwJdLFeymL",
+          "name": "Job Scout bot"
+        }
+      },
+      "webhookId": "518ff511-4b2f-4641-a481-b3a9c3bf64a0"
+    },
+    {
+      "id": "32ce2477-c9f9-410a-95a7-9d40059bb89f",
+      "name": "Sticky Note crash alert",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        1340
+      ],
+      "parameters": {
+        "content": "## Crash alert\n\nIf a scan fails, **Scan crashed** runs and **Send crash alert** sends \"Job Scout scan failed at <step>: <error>\" to the chat in **Job Scout config**, with a link to the failed execution.\n\n- **Nothing to hook up after import.** Importing a template drops workflow settings, so this doesn't use one: when a workflow has an Error Trigger and no error workflow is chosen in its settings, n8n runs that workflow's own Error Trigger when one of its runs fails. Leave **Settings → Error workflow** empty (or pick this workflow). Picking another workflow there sends the alert to that one instead.\n- It fires for published runs only (the daily schedule), not when you click Execute in the editor, and it runs the published version.\n- Pick your Telegram credential on **Send crash alert**.\n- The chat ID is read from **telegramChatId** in **Job Scout config** without running that node, so keep that field a plain value, not an expression.\n- If no board could be fetched at all, the scan fails at **Normalize postings** on purpose, so you get this alert instead of an empty day.",
+        "width": 720,
+        "height": 520
       }
     }
   ],
@@ -1546,7 +1719,7 @@
       "main": [
         [
           {
-            "node": "Read Jev answers",
+            "node": "Any Jev failures?",
             "type": "main",
             "index": 0
           }
@@ -1601,7 +1774,7 @@
       "main": [
         [
           {
-            "node": "Write fit line",
+            "node": "Any leads to send?",
             "type": "main",
             "index": 0
           }
@@ -1691,6 +1864,86 @@
           }
         ]
       ]
+    },
+    "Any Jev failures?": {
+      "main": [
+        [
+          {
+            "node": "Jev requests to retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Jev answers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jev requests to retry": {
+      "main": [
+        [
+          {
+            "node": "Ask Jev again",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Jev again": {
+      "main": [
+        [
+          {
+            "node": "Read Jev answers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any leads to send?": {
+      "main": [
+        [
+          {
+            "node": "Write fit line",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build header",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan crashed": {
+      "main": [
+        [
+          {
+            "node": "Build crash alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build crash alert": {
+      "main": [
+        [
+          {
+            "node": "Send crash alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "nodeGroups": [
@@ -1717,7 +1970,7 @@
     {
       "id": "group-score-leads",
       "name": "Score leads",
-      "description": "Jev judges New, unsent leads that passed the filters when their input changed; code turns the sub-scores into a fit score every scan.",
+      "description": "Jev judges New, unsent leads that passed the filters when their input changed (failed requests get a second try); code totals the fit score.",
       "nodeIds": [
         "636f1642-8141-4f7d-adbb-c4e08208e488",
         "js-build-jev-requests",
@@ -1726,20 +1979,24 @@
         "js-read-jev-answers",
         "dt-save-judgments",
         "js-score-and-select",
-        "dt-save-fit"
+        "dt-save-fit",
+        "79999c08-d650-4894-99e0-669a11cb6176",
+        "0a45d385-99bf-4073-894c-83759f3b16d7",
+        "539c5055-d7ac-4aa4-88ba-dba537e08364"
       ]
     },
     {
       "id": "1b09ec46-ed85-4f22-8cfc-dcf9508338b2",
       "name": "Build the ping",
-      "description": "Picks the highest-fit eligible leads up to the daily cap, has Claude write a fit line for each, and sends the header.",
+      "description": "Picks the top eligible leads up to the daily cap, has Claude write fit lines, and sends the header, or a 'no new leads' message with counts.",
       "nodeIds": [
         "js-pick-leads-to-send",
         "anthropic-fit-line",
         "a92e3af9-bb33-41f9-ae15-63a66ec461d5",
         "2c67b0d8-5535-4536-8edc-3b862c41bdfd",
         "3fdeb8d6-613d-4bc0-b4ef-bcfa7c71290c",
-        "51cc211b-1646-42ac-9801-915681d4b7d9"
+        "51cc211b-1646-42ac-9801-915681d4b7d9",
+        "944aab96-f3eb-49ff-b2e0-ac1688efa56c"
       ]
     },
     {
@@ -1751,6 +2008,15 @@
         "4180ad9e-c641-4e99-9648-6f84a8570179",
         "b97b5e09-714b-4153-882c-ad7235a23a9c",
         "ed5abf13-283d-47df-bea6-4d811b8ab2bf"
+      ]
+    },
+    {
+      "id": "baec6346-dae0-46ea-abd3-46cfe91dfd89",
+      "name": "Crash alert",
+      "description": "Runs when a published run of this workflow fails and sends the failed step and the error to Telegram.",
+      "nodeIds": [
+        "74da3f13-dfb3-42a0-960a-fee165f536ee",
+        "be55ce00-c181-41b1-beaf-e15bbcf3ea72"
       ]
     }
   ],

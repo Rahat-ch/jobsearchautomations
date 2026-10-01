@@ -65,7 +65,10 @@ FETCH_NODE = "Fetch board"
 HEADER_NODE = "Send header"
 LEAD_NODE = "Send lead message"
 JEV_NODE = "Ask Jev"
+JEV_RETRY_NODE = "Ask Jev again"
 FIT_NODE = "Write fit line"
+CRASH_TRIGGER = "Scan crashed"
+CRASH_NODE = "Send crash alert"
 
 ENV = n8n_mcp.load_env()
 
@@ -344,9 +347,12 @@ JEV = {
 # Jev's pick for the base salary question, for postings whose pay is only in the description.
 JEV_PAY = {"Developer Advocate, Platform": "$150,000 - $170,000 USD",
            "Senior Product Engineer, Growth": "$190K–$230K"}
-FAIL = "fail"  # in place of a spec: the request failed after its retries
+FAIL = "fail"  # in place of a spec: the request failed on both tries (Ask Jev and Ask Jev again)
+RECOVER = "recover"  # in place of a spec: the first try failed and the second succeeded
 FAILED_RESPONSE = {"error": {"message": "The service is receiving too many requests from you",
                              "description": "Overloaded", "name": "NodeApiError", "httpCode": "529"}}
+FIT_FAIL = None  # in place of a fit line: the Claude request failed
+FAILED_FIT = {"error": "Overloaded"}
 FAMILIES = ["DevEx/Product PM", "FDE/Solutions", "Product/Frontend Engineering", "DevRel/DevEx", NONE]
 LEVELS = ["intern_junior", "mid", "senior", "lead", "staff_plus", "manager", "founding", "not_stated"]
 
@@ -446,13 +452,9 @@ FAILED_FETCH_ITEM = {"error": {"message": "404 - {\"ok\":false,\"error\":\"Docum
                                "name": "AxiosError", "status": 404}}
 
 
-def run_scan(workflow, daily_cap=10, board=BOARD, fixture=FIXTURE, boards=None, judged=(), jev=None,
-             fit_lines=None, **config):
-    """Runs one scan. `boards` is a list of (ats, board, fixture or FAILED_FETCH); by
-    default one Ashby board. `judged` is the lead keys expected to reach Jev; their
-    pinned answers come from JEV (or `jev`, by title, where FAIL means a failed
-    request), in the order Build Jev requests sends them. `fit_lines` are Claude's
-    pinned replies, in send order."""
+def scan_pins(workflow, daily_cap=10, board=BOARD, fixture=FIXTURE, boards=None, judged=(), jev=None,
+              fit_lines=None, **config):
+    """Pin data for one scan, and the lead keys expected to reach Jev and Ask Jev again."""
     boards = sorted(boards or [("ashby", board, fixture)], key=lambda b: ATS_ORDER.index(b[0]))
     cfg = config_defaults(workflow)
     cfg.update({"ashbyBoards": [b for a, b, _ in boards if a == "ashby"],
@@ -465,35 +467,60 @@ def run_scan(workflow, daily_cap=10, board=BOARD, fixture=FIXTURE, boards=None, 
                for a, _, f in boards]
     judged = sorted(judged)
     jev = jev or {}
-    responses = []
+    responses, retried, retry_responses = [], [], []
     for k in judged:
         title = ALL_KEYS[k]["title"]
-        responses.append(FAILED_RESPONSE if jev.get(title) == FAIL else jev_response(title))
+        if jev.get(title) in (FAIL, RECOVER):
+            responses.append(FAILED_RESPONSE)
+            retried.append(k)
+            retry_responses.append(FAILED_RESPONSE if jev[title] == FAIL else jev_response(title))
+        else:
+            responses.append(jev_response(title))
     lines = fit_lines or [f"Pinned fit line {i + 1}." for i in range(daily_cap)]
     pin = {
         TRIGGER: [{"json": {}}],
         "Job Scout config": [{"json": cfg}],
         FETCH_NODE: fetched,
         JEV_NODE: [{"json": r} for r in responses] or [{"json": {}}],
-        FIT_NODE: [{"json": {"content": [{"type": "text", "text": t}], "merged_response": t}} for t in lines]
+        JEV_RETRY_NODE: [{"json": r} for r in retry_responses] or [{"json": {}}],
+        FIT_NODE: [{"json": FAILED_FIT if t is FIT_FAIL else {"content": [{"type": "text", "text": t}],
+                                                             "merged_response": t}} for t in lines]
         or [{"json": {}}],
         HEADER_NODE: [{"json": {"ok": True, "result": {"message_id": 1}}}],
         LEAD_NODE: [{"json": {"ok": True, "result": {"message_id": 2}}}],
+        CRASH_NODE: [{"json": {"ok": True, "result": {"message_id": 3}}}],
     }
     unpinned = [n["name"] for n in workflow["nodes"]
                 if n["type"] in EXTERNAL_TYPES and n["name"] not in pin and not n.get("disabled")]
     assert not unpinned, f"external nodes without pin data: {unpinned}"
+    return pin, judged, retried
 
+
+def run_pinned(workflow, pin, trigger=TRIGGER):
+    """Runs the workflow from a trigger with pin data; returns (status, result, runData)."""
     result = mcp("test_workflow", {"workflowId": workflow["id"], "pinData": pin,
-                                   "triggerNodeName": TRIGGER, "timeout": 180})
-    assert result["status"] == "success", f"scan failed: {result}"
+                                   "triggerNodeName": trigger, "timeout": 180})
     execution = mcp("get_workflow_execution", {"workflowId": workflow["id"],
                                                "executionId": result["executionId"],
                                                "includeData": True})
-    run_data = execution["data"]["resultData"]["runData"]
+    return result["status"], execution, execution["data"]["resultData"]["runData"]
+
+
+def run_scan(workflow, **kw):
+    """Runs one scan. `boards` is a list of (ats, board, fixture or FAILED_FETCH); by
+    default one Ashby board. `judged` is the lead keys expected to reach Jev; their
+    pinned answers come from JEV (or `jev`, by title, where FAIL means the request
+    failed on both tries and RECOVER that it failed once and then succeeded), in the
+    order Build Jev requests sends them. `fit_lines` are Claude's pinned replies, in
+    send order (FIT_FAIL for a failed request)."""
+    pin, judged, retried = scan_pins(workflow, **kw)
+    status, execution, run_data = run_pinned(workflow, pin)
+    assert status == "success", f"scan failed: {execution['data']['resultData'].get('error')}"
     asked = sorted(i["lead_key"] for i in items_reaching(run_data, JEV_NODE))
     assert asked == judged, (f"Jev was asked about {[ALL_KEYS[k]['title'] for k in asked]}, "
                              f"expected {[ALL_KEYS[k]['title'] for k in judged]}")
+    again = [i["lead_key"] for i in items_reaching(run_data, JEV_RETRY_NODE)]
+    assert again == retried, f"Ask Jev again got {titles(again)}, expected {titles(retried)}"
     return run_data
 
 
@@ -532,11 +559,26 @@ def check_lead_messages(leads, rows_by_key):
         assert msg["button_url"] == rows_by_key[msg["lead_key"]]["posting_url"]
 
 
-def check_header(header, n):
+def check_header(header, n, unscored=0):
+    # The unscored note appears only when Jev couldn't score a lead.
     assert len(header) == 1, f"expected one header, got {len(header)}"
     word = "lead" if n == 1 else "leads"
-    assert header[0]["text"] == f"Job Scout: {n} new {word} today", header[0]
+    want = f"Job Scout: {n} new {word} today"
+    if unscored:
+        want += f" · {unscored} couldn't be scored (retrying next scan)"
+    assert header[0]["text"] == want, header[0]
     assert header[0]["silent"] is False, "header must make a sound"
+
+
+def check_empty_day(header, leads, scanned, filtered, unscored=0):
+    # Nothing to send: one silent message with the day's counts, and no lead messages.
+    assert leads == [], f"an empty day sent {len(leads)} lead message(s)"
+    assert len(header) == 1, f"expected one empty-day message, got {len(header)}"
+    note = f"{unscored} couldn't be scored" + (" (retrying next scan)" if unscored else "")
+    want = (f"Job Scout: no new leads today\n{scanned} posting{'' if scanned == 1 else 's'} scanned · "
+            f"{filtered} filtered out · {note}")
+    assert header[0]["text"] == want, header[0]["text"]
+    assert header[0]["silent"] is True, "the empty-day message should be silent"
 
 
 def titles(keys):
@@ -589,7 +631,7 @@ def case_daily_ping_shape(wf):
     assert all(rows[k]["sent_at"] for k in expected), "sent leads have no sent_at"
 
 
-def case_rescan_creates_no_duplicates_and_sends_nothing(wf):
+def case_rescan_creates_no_duplicates_and_sends_no_leads(wf):
     # The second scan also asks Jev nothing: the two unsent leads below the minimum
     # are still candidates, but their scoring input hasn't changed.
     reset_test_tables()
@@ -605,7 +647,7 @@ def case_rescan_creates_no_duplicates_and_sends_nothing(wf):
         assert row["sent_at"] == before[key]["sent_at"], f"{key} sent_at changed"
         assert row["scored_at"] == before[key]["scored_at"], f"{key} was judged again"
     header, leads = sent(run_data)
-    assert header == [] and leads == [], f"second scan sent {len(header)} header(s), {len(leads)} lead(s)"
+    check_empty_day(header, leads, scanned=len(KEY), filtered=len(KEY) - len(PASSED))
 
 
 def case_cap_and_carry_over_by_fit(wf):
@@ -629,7 +671,7 @@ def case_cap_and_carry_over_by_fit(wf):
     rows = rows_by_key()
     assert sorted(k for k, r in rows.items() if r["sent_at"]) == sorted(FPASSED)
     header, leads = sent(run_scan(wf, daily_cap=cap, board=FILTER_BOARD, fixture=FILTER_FIXTURE))
-    assert header == [] and leads == [], "fourth scan sent messages"
+    check_empty_day(header, leads, scanned=len(FKEY), filtered=len(FKEY) - len(FPASSED))
 
 
 def case_telegram_nodes_send_what_they_receive(wf):
@@ -660,7 +702,15 @@ def case_jev_and_claude_nodes_call_what_they_receive(wf):
     assert (p["authentication"], p["genericAuthType"]) == ("genericCredentialType", "httpBearerAuth")
     assert "httpBearerAuth" in jev.get("credentials", {}), "Ask Jev has no Bearer credential"
     assert p["jsonBody"] == "={{ JSON.stringify($json.jev_body) }}"
-    assert jev.get("retryOnFail") is True and jev.get("onError") == "continueRegularOutput"
+    assert jev.get("onError") == "continueRegularOutput"
+    # Ask Jev tries each request once (n8n retries a node only when its first item
+    # fails, and then re-sends every item); the failed ones go to Ask Jev again, which
+    # sends the same request and retries.
+    again = nodes[JEV_RETRY_NODE]
+    assert again["parameters"] == p, "Ask Jev again must send the same request as Ask Jev"
+    assert again.get("credentials") == jev.get("credentials")
+    assert again.get("retryOnFail") is True and again.get("maxTries", 3) >= 2
+    assert again.get("onError") == "continueRegularOutput"
     claude = nodes[FIT_NODE]
     p = claude["parameters"]
     assert (p["resource"], p["operation"]) == ("text", "message")
@@ -794,18 +844,134 @@ def case_developer_advocate_under_marketing_gets_devrel(wf):
 
 
 def case_jev_failure_leaves_lead_unscored(wf):
+    # Jev fails for three leads. Each failed request gets a second try in the same scan:
+    # one succeeds and that lead is scored and sent; two fail again and are saved
+    # unscored, held back, and counted in the header. The next scan judges only those
+    # two again, and then they are sent.
     reset_test_tables()
-    failed = FBY_TITLE["Senior Product Engineer"]  # the top lead when scored
-    header, leads = sent(run_scan(wf, board=FILTER_BOARD, fixture=FILTER_FIXTURE, judged=FPASSED,
-                                  daily_cap=50, jev={"Senior Product Engineer": FAIL}))
-    row = rows_by_key()[failed]
-    assert row["scoring_state"] == "unscored" and row["fit_score"] is None and not row["sent_at"], row
-    sent_keys = [m["lead_key"] for m in leads]
-    assert failed not in sent_keys and sorted(sent_keys) == sorted(set(FPASSED) - {failed})
-    # The next scan judges it again, and then it is sent.
-    header, leads = sent(run_scan(wf, board=FILTER_BOARD, fixture=FILTER_FIXTURE, judged=[failed]))
-    check_sent_order(leads, [failed])
-    assert rows_by_key()[failed]["scoring_state"] == "scored"
+    failed = [FBY_TITLE["Senior Product Engineer"], FBY_TITLE["Developer Advocate"]]  # top leads when scored
+    recovered = FBY_TITLE["Frontend Engineer"]
+    jev = {FKEY[k]["title"]: FAIL for k in failed}
+    jev[FKEY[recovered]["title"]] = RECOVER
+    run_data = run_scan(wf, board=FILTER_BOARD, fixture=FILTER_FIXTURE, judged=FPASSED, daily_cap=50, jev=jev)
+    header, leads = sent(run_data)
+    rows = rows_by_key()
+    for k in failed:
+        r = rows[k]
+        assert r["scoring_state"] == "unscored" and r["fit_score"] is None and not r["sent_at"], r
+        assert r["selection_reason"] == "unscored", r["selection_reason"]
+    assert rows[recovered]["scoring_state"] == "scored" and rows[recovered]["fit_score"] == expected_fit(recovered)
+    want = fit_order(set(FPASSED) - set(failed))
+    assert recovered in want
+    check_sent_order(leads, want)
+    check_header(header, len(want), unscored=2)
+    # The next scan judges the two again (and nothing else), and then they are sent.
+    header, leads = sent(run_scan(wf, board=FILTER_BOARD, fixture=FILTER_FIXTURE, judged=failed))
+    check_sent_order(leads, fit_order(failed))
+    check_header(header, 2)
+    rows = rows_by_key()
+    assert all(rows[k]["scoring_state"] == "scored" and rows[k]["sent_at"] for k in failed)
+
+
+def case_claude_failure_still_sends_lead(wf):
+    # Claude fails for the first lead: it is still sent, with no fit line, and the
+    # other leads keep theirs.
+    reset_test_tables()
+    order = fit_order(PASSED)
+    run_data = run_scan(wf, judged=PASSED, fit_lines=[FIT_FAIL, "Pinned fit line 2."])
+    header, leads = sent(run_data)
+    check_header(header, len(order))
+    check_sent_order(leads, order)
+    assert "<i>" not in leads[0]["text"] and leads[0]["fit_line"] is None, leads[0]["text"]
+    assert "<i>Pinned fit line 2.</i>" in leads[1]["text"], leads[1]["text"]
+    rows = rows_by_key()
+    assert all(rows[k]["sent_at"] for k in order), "a lead without a fit line wasn't sent"
+    assert not rows[order[0]]["fit_line"] and rows[order[1]]["fit_line"] == "Pinned fit line 2."
+
+
+def case_empty_day_message_counts(wf):
+    # Nothing to send: one silent message with how many postings were scanned, how many
+    # were filtered out and how many couldn't be scored.
+    # 1. Every posting fails a hard rule, so no lead is even a candidate.
+    reset_test_tables()
+    only_filtered = without(FILTER_FIXTURE, FPASSED)
+    n = len(FKEY) - len(FPASSED)
+    header, leads = sent(run_scan(wf, board=FILTER_BOARD, fixture=only_filtered))
+    check_empty_day(header, leads, scanned=n, filtered=n)
+    # 2. Leads are scored but none reaches the minimum. A salary Jev found in the
+    #    description below the floor counts as filtered.
+    reset_test_tables()
+    header, leads = sent(run_scan(wf, board=SCORING_BOARD, fixture=SCORING_FIXTURE, judged=list(SKEY),
+                                  minFitScore=101))
+    check_empty_day(header, leads, scanned=len(SKEY), filtered=1)
+    # 3. Jev fails for one lead and none of the others reaches the minimum.
+    reset_test_tables()
+    run_data = run_scan(wf, board=FILTER_BOARD, fixture=FILTER_FIXTURE, judged=FPASSED, minFitScore=101,
+                        jev={"Senior Product Engineer": FAIL})
+    header, leads = sent(run_data)
+    check_empty_day(header, leads, scanned=len(FKEY), filtered=len(FKEY) - len(FPASSED), unscored=1)
+    assert items_reaching(run_data, FIT_NODE) == [], "Claude ran on an empty day"
+
+
+def case_every_board_failing_crashes_the_scan(wf):
+    # With no board fetched there is nothing to report as an empty day, so the scan
+    # fails at Normalize postings (which sends the crash alert in a published run).
+    reset_test_tables()
+    pin, _, _ = scan_pins(wf, boards=[("ashby", FILTER_BOARD, FAILED_FETCH), ("lever", LVF_BOARD, FAILED_FETCH)])
+    status, execution, run_data = run_pinned(wf, pin)
+    assert status != "success", "the scan should fail when no board could be fetched"
+    result = execution["data"]["resultData"]
+    assert result["lastNodeExecuted"] == "Normalize postings", result["lastNodeExecuted"]
+    error = result["error"]
+    assert error["message"].startswith("No board could be fetched: ashby:testco (404"), error["message"]
+    assert "lever:leverco" in error["message"]
+    assert HEADER_NODE not in run_data and lead_rows() == []
+
+
+# The data n8n's Error Trigger gets when a published run fails, in the shape recorded from
+# a real failed scan on 2026-10-01 (n8n 2.41.3): a Code node error carries no `node`, and
+# lastNodeExecuted is the step that failed. The host is made up.
+CRASH_DATA = {
+    "execution": {
+        "id": "470", "url": "https://n8n.example.com/workflow/abc/executions/470",
+        "error": {"message": "Request failed <html> & more [line 3]", "name": "WrappedExecutionError",
+                  "level": "info", "lineNumber": 3, "description": None, "tags": {}, "shouldReport": False,
+                  "stack": "WrappedExecutionError: Request failed"},
+        "lastNodeExecuted": "Board list", "mode": "trigger",
+        "executionContext": {"version": 1, "source": "trigger",
+                             "triggerNode": {"name": "Daily scan", "type": "n8n-nodes-base.scheduleTrigger"}},
+    },
+    "workflow": {"id": "abc", "name": "Job Scout"},
+}
+
+
+def case_crash_alert_names_the_failed_step(wf):
+    # Runs the crash alert path from its Error Trigger with pinned error data (a real
+    # published failure is checked by hand; see tests/README.md).
+    nodes = {n["name"]: n for n in wf["nodes"]}
+    assert nodes[CRASH_TRIGGER]["type"] == "n8n-nodes-base.errorTrigger"
+    assert not wf.get("settings", {}).get("errorWorkflow"), "another error workflow would replace this path"
+    p = nodes[CRASH_NODE]["parameters"]
+    assert p["chatId"] == ("={{ $('Job Scout config').params.assignments.assignments"
+                           ".find((a) => a.name === 'telegramChatId').value }}"), p["chatId"]
+    assert p["text"] == "={{ $json.text }}"
+    extra = p["additionalFields"]
+    assert extra.get("parse_mode") == "HTML" and extra.get("appendAttribution") is False
+    assert "telegramApi" in nodes[CRASH_NODE].get("credentials", {}), "Send crash alert has no credential"
+    pin = {CRASH_TRIGGER: [{"json": CRASH_DATA}], CRASH_NODE: [{"json": {"ok": True, "result": {"message_id": 3}}}]}
+    status, execution, run_data = run_pinned(wf, pin, trigger=CRASH_TRIGGER)
+    assert status == "success", execution["data"]["resultData"].get("error")
+    (alert,) = items_reaching(run_data, CRASH_NODE)
+    assert alert["text"] == ("Job Scout scan failed at Board list: Request failed &lt;html&gt; &amp; more [line 3]"
+                             "\nExecution: https://n8n.example.com/workflow/abc/executions/470"), alert["text"]
+    assert alert["silent"] is False
+    # An error that names its node (as node errors can) wins over lastNodeExecuted.
+    data = copy.deepcopy(CRASH_DATA)
+    data["execution"]["error"]["node"] = {"name": "Fetch board", "type": "n8n-nodes-base.httpRequest"}
+    pin[CRASH_TRIGGER] = [{"json": data}]
+    _, _, run_data = run_pinned(wf, pin, trigger=CRASH_TRIGGER)
+    (alert,) = items_reaching(run_data, CRASH_NODE)
+    assert alert["text"].startswith("Job Scout scan failed at Fetch board: "), alert["text"]
 
 
 def case_message_shows_fit_breakdown_and_fit_line(wf):
@@ -1148,7 +1314,10 @@ def case_failed_fetch_closes_nothing(wf):
     assert not [FKEY[k]["title"] for k in FKEY if rows[k]["closed_at"]], "the failed board's leads were closed"
     assert rows[gone]["closed_at"], "the missing posting on the fetched board wasn't closed"
     assert [k for k in LVFKEY if rows[k]["closed_at"]] == [gone]
-    assert sent(run_data) == ([], [])
+    # The failed board adds nothing to the counts.
+    header, leads = sent(run_data)
+    check_empty_day(header, leads, scanned=len(LVFKEY) - 1,
+                    filtered=sum(EXPECTED[j["title"]] != "passed" for k, j in LVFKEY.items() if k != gone))
 
 
 def case_reappearing_posting_clears_closed_at(wf):
@@ -1170,7 +1339,7 @@ CASES = [
     case_config_defaults_match_spec,
     case_one_lead_per_posting,
     case_daily_ping_shape,
-    case_rescan_creates_no_duplicates_and_sends_nothing,
+    case_rescan_creates_no_duplicates_and_sends_no_leads,
     case_cap_and_carry_over_by_fit,
     case_filters_store_the_failed_rule,
     case_filtered_leads_never_reach_telegram,
@@ -1184,6 +1353,10 @@ CASES = [
     case_freshness_window_counts_from_first_seen,
     case_changed_profile_summary_rejudges_unsent_leads,
     case_jev_failure_leaves_lead_unscored,
+    case_claude_failure_still_sends_lead,
+    case_empty_day_message_counts,
+    case_every_board_failing_crashes_the_scan,
+    case_crash_alert_names_the_failed_step,
     case_message_shows_fit_breakdown_and_fit_line,
     case_pay_found_in_description,
     case_greenhouse_and_lever_postings_become_leads,

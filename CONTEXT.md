@@ -88,7 +88,7 @@ _Avoid_: Settings, brief, preferences
 ### Triage
 
 **Daily ping**:
-The set of Telegram messages a scan produces: one header plus one message per lead sent that day.
+The set of Telegram messages a scan produces: one header plus one message per lead sent that day. On a day with nothing to send, it is one "no new leads" message with the day's counts.
 _Avoid_: Digest, notification, alert
 
 **Daily cap**:

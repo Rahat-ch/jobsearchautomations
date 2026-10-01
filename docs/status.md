@@ -210,6 +210,10 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 - **Unknown location:** an X-only lead with no stated location passes the location filter and shows as "Location unclear". Only a clearly wrong location filters it out.
 - **Boards outside the config:** an X post that links to a posting at a company not in the board list still becomes a lead. The board list changes only when Rahat edits the config.
 - **Scoring failures:** retry. If scoring still fails, the lead is saved Unscored and scored on the next scan. The header reports how many couldn't be scored.
+  - Built in issue #10 (2026-10-01): n8n retries a node only when its first item fails, and then re-sends every item (`workflow-execute.js`, `checkFailure` reads `data[0][0].json.error`). So **Ask Jev** sends each request once with no node retry, and the requests that failed go to **Ask Jev again**: a second try, and up to two more tries 5 s apart if the first of them fails again.
+  - A lead that still fails gets `scoring_state` `unscored` and `selection_reason` `unscored`. It isn't sent, and the next scan judges it again because only `scored` leads with an unchanged fingerprint are skipped.
+  - The header adds "· N couldn't be scored (retrying next scan)" only when N > 0.
+  - If Claude's fit line fails for a lead, the lead is still sent, without a fit line. Claude has no second pass (only the node's own retry, when the first item fails).
 - **Sending:**
   - The minimum fit score is 60 (config).
   - New leads that miss the daily cap stay New and compete later.
@@ -226,14 +230,20 @@ The Hermes board design may become the UI later. The proof of concept has no fro
   - Lever: live `workplaceType` is `onsite`, `hybrid` or `remote`; `on-site` (the docs' spelling) is also accepted. `country` places the primary location, and `allLocations` are secondary locations. Pay comes from `salaryRange` in USD per year or per month. Lever has no company name, so the company is the site name, as with Ashby.
   - Location: a non-remote place with no city is "Location unclear" only when it names the US or a metro's region ("United States", "Texas"); a lone city outside the metros ("Stockholm", "San Francisco- Hybrid") fails. Common non-US cities and countries are listed for places with no country code.
 - **Empty day:** a short "no new leads" message with counts: scanned, filtered, unscored.
+  - Built in issue #10 (2026-10-01) as one silent message: "Job Scout: no new leads today" and "N postings scanned · N filtered out · N couldn't be scored". Scanned counts the postings fetched in this scan; filtered counts those that failed a hard rule, including a salary Jev found in the description below the floor; unscored counts the leads whose Jev request still failed.
+  - If no board could be fetched at all, the scan fails at Normalize postings on purpose, so the crash alert reports it instead of an empty day.
 - **Crash:** an error workflow sends "Job Scout scan failed" with the node and the error to the same chat.
+  - **Answer (issue #10, 2026-10-01): the workflow can be its own error workflow, with no setting at all.** In n8n 2.41.3 (`execute-error-workflow.js`), when a run fails and the workflow has no `settings.errorWorkflow`, n8n runs the failing workflow's own Error Trigger ("Start internal error workflow"), for any mode except `error`. Setting `errorWorkflow` to the workflow's own ID also works; the only check is that a run in `error` mode doesn't call itself again. Either way n8n runs the published version (`loadErrorWorkflowData`), and only for non-manual runs (`execution-lifecycle-hooks.js` skips mode `manual`).
+  - So Job Scout has an Error Trigger (**Scan crashed**) → **Build crash alert** → **Send crash alert**. Nothing has to be set after a template import. The alert reads the chat ID from the config node's parameters (`$('Job Scout config').params`), which works without that node running, so `telegramChatId` must stay a plain value.
+  - Text: "Job Scout scan failed at <step>: <error>" plus a link to the failed execution. A Code node's error carries no node name, so the step comes from `execution.lastNodeExecuted`, which is the node that failed.
+  - Checked once for real on 2026-10-01: a published copy with a broken Board list node, run in production mode through MCP, failed (execution mode `trigger`), n8n ran its own Error Trigger (mode `error`), and Telegram returned `ok: true` for a "[Test]" alert. The copy was deleted.
 - **Suggested contacts:** for a lead from a hiring post, the post's author is the first candidate. X data is stored as handle and reason only.
 - **No reminders** for Picked leads in the proof of concept.
 - **MCP "set lead status"** can also move a lead back to New, as the undo path.
 
 **Build shape** (ADR 0005)
 - An n8n gallery template is one workflow JSON, so Job Scout is one workflow with several triggers.
-- Importing a template drops workflow settings. The error workflow must be set up by hand after import, and a sticky note should explain how.
+- Importing a template drops workflow settings. The crash alert doesn't need one: the workflow's own Error Trigger runs when no error workflow is set (issue #10). A sticky note says so.
 
 **Docs for ticket work**
 - `CONTEXT.md`: the glossary (lead, posting, board, hiring post, pick, pass, suggested contact, fit score, and so on).

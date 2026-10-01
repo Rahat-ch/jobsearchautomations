@@ -5,12 +5,21 @@ The tests run the Job Scout workflow's **Daily scan** trigger through n8n's inst
 - **Job Scout config** is pinned to the node's own defaults (so the filter rules, weights and thresholds under test are the shipped ones), with the boards the case scans (one Ashby board unless it says otherwise), a fake chat ID and the table prefix `jobscout_test_`. A case can override a field, such as `payFloor`, `weights` or `profileSummary`.
 - **Fetch board** is pinned to one full response per board, in the order **Board list** builds them (Ashby, then Greenhouse, then Lever): `fixtures/ashby-n8n.json` (board `n8n`), `fixtures/ashby-filters.json` (`testco`), `fixtures/ashby-scoring.json` (`scoreco`), `fixtures/greenhouse-instacart.json` (`instacart`), `fixtures/lever-spotify.json` (`spotify`), `fixtures/greenhouse-filters.json` (`ghco`) or `fixtures/lever-filters.json` (`leverco`). A board can instead be pinned to a failed fetch (an `error` item, as the node returns with "continue on error"). The runner moves each posting's publish date (Ashby `publishedAt`, Greenhouse `first_published`, Lever `createdAt`) to whole days before now, keeping the gaps between postings, so the freshness window and freshness points don't change as the recorded dates age.
 - **Ask Jev** is pinned to one Jev response per lead that should be judged, in the order **Build Jev requests** sends them (by lead key). Each response has the shape of `fixtures/jev-response.json`, a real response recorded 2026-09-30, with the answers for that posting from `JEV` in `run_tests.py`. A case lists the leads it expects Jev to judge, and the runner fails if Jev is asked about any others, so every scan also checks that unchanged leads aren't judged again.
-- **Write fit line** (Claude) is pinned to fixed fit lines, in send order.
-- **Send header** and **Send lead message** are pinned to fake Telegram replies, so nothing is sent.
+- A case can make a lead's Jev request fail: `FAIL` fails it in **Ask Jev** and again in **Ask Jev again** (the second try for failed requests), and `RECOVER` fails it once and then answers. **Ask Jev again** is pinned to the responses for the failed requests, in the same order, and the runner checks that exactly those requests reached it.
+- **Write fit line** (Claude) is pinned to fixed fit lines, in send order, or to a failed reply (`FIT_FAIL`).
+- **Send header**, **Send lead message** and **Send crash alert** are pinned to fake Telegram replies, so nothing is sent.
 
 Every other node runs for real, including the Data Table nodes, which write to `jobscout_test_leads`. Each case clears the `jobscout_test_` tables first and again at the end.
 
-The cases check only external behavior: rows in the test table, and the items that reach the Jev, Claude and Telegram nodes. Two cases also check that those nodes send what they receive (Telegram: text, sound, HTML parse mode, no attribution, the Open posting button; Jev: the endpoint, Bearer credential, retries and the request body; Claude: the model, credential and a prompt that forbids invented facts), because pinned nodes don't evaluate their own parameters. Another reads the config node's defaults and its sticky note, to check them against the spec.
+The cases check only external behavior: rows in the test table, and the items that reach the Jev, Claude and Telegram nodes. Two cases also check that those nodes send what they receive (Telegram: text, sound, HTML parse mode, no attribution, the Open posting button; Jev: the endpoint, Bearer credential, that **Ask Jev again** sends the same request with retries, and the request body; Claude: the model, credential and a prompt that forbids invented facts), because pinned nodes don't evaluate their own parameters. Another reads the config node's defaults and its sticky note, to check them against the spec.
+
+Resilience (issue #10):
+
+- A Jev failure leaves a lead unscored and unsent, the header counts it ("· 2 couldn't be scored (retrying next scan)"), a request that fails once and then succeeds is scored and sent in the same scan, and the next scan judges only the unscored leads again. Every other case checks the exact header text, so the note never appears when nothing failed.
+- A failed fit line still sends the lead, without the fit line.
+- A scan with nothing to send produces one silent "Job Scout: no new leads today" message with the scanned, filtered and unscored counts: when every posting is filtered, when nothing reaches the minimum (a salary found in the description below the floor counts as filtered), and when Jev fails for a lead. The quiet scans in other cases check it too.
+- When every board's fetch fails, the scan stops at **Normalize postings** with "No board could be fetched".
+- The crash alert path runs from its Error Trigger (**Scan crashed**) with pinned error data in the shape n8n produced for a real failed scan, and the case checks the alert text, HTML escaping, the step name, and that **Send crash alert** reads the chat ID from the config node.
 
 The expected filter result for every fixture posting is listed by title in `EXPECTED` in `run_tests.py`. Expected fit scores come from `expected_points`, which works out the fit score from the pinned Jev answers, the location basis, the posting's age and the weights, independently of the workflow's code.
 
@@ -34,6 +43,17 @@ It exits non-zero if any case fails. A full run takes about 5 minutes, because t
 - Python 3.11 or later. Standard library only.
 
 The runner refuses to start if any Telegram, HTTP Request or Anthropic node in the workflow is missing pin data, so no test calls Jev, Claude, a job board or Telegram. It only clears tables whose names start with `jobscout_test_`.
+
+## Manual check: the crash alert
+
+n8n runs an error workflow only for published, non-manual runs, so `test_workflow` can't fire the real alert. Check it by hand after changing the crash path. This sends one real Telegram message.
+
+1. Copy Job Scout (public API `POST /workflows`) with `tablePrefix` set to `jobscout_test_`, **Board list** replaced by `throw new Error('Deliberate crash to check the crash alert');`, "[Test] " added to the start of the alert text in **Build crash alert**, and no `errorWorkflow` in settings.
+2. Publish the copy, wait until it shows as active, and run it with MCP `execute_workflow` in `production` mode from **Daily scan**.
+3. Expect two executions of the copy: the scan in mode `trigger` with status `error` and `lastNodeExecuted` **Board list**, and the alert in mode `error` whose **Send crash alert** output has `ok: true`.
+4. Unpublish and delete the copy.
+
+Last run 2026-10-01: Telegram returned `ok: true` (message 46) for "[Test] Job Scout scan failed at Board list: Deliberate crash to check the crash alert [line 1]". The first `execute_workflow` call right after `publish_workflow` failed with "no published (active) version"; waiting until the copy showed as active fixed it.
 
 ## Fixtures
 
