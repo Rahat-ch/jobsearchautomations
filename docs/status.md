@@ -158,6 +158,9 @@ The Hermes board design may become the UI later. The proof of concept has no fro
 - **Code:** the location, pay-floor and freshness checks, then applies the weights and computes the total.
 - **Jev:** scores role family, stack, seniority and domain, checks messy location text, and decides "is this X post a real job".
 - **Claude:** writes only for the leads that make the daily cap, and when Rahat taps "Find people".
+- **Role family required** (decided 2026-09-30): a lead whose role family is "None of these" (Jev's top answer) is never sent, whatever its fit score. The lead's `selection_reason` records why a lead was held back.
+- **Consultants** (decided 2026-09-30): Technical Consultant and Solutions Consultant roles count as FDE/Solutions; accounting, finance or business-process consulting (such as Partner Consultant, Accounting) does not.
+- **Fit line model:** Claude Sonnet 5.5 (`claude-sonnet-5-5`).
 - **Seniority:** Senior, Lead and Founding Engineer are the focus. Junior, mid-level, Staff+ and manager titles score low.
 - **Referral:** 0 by default. A Telegram button on a lead marks "I have a referral" and adds the referral points.
 - **Keys:** the template needs three, for Telegram, Anthropic and TypeSafe.
@@ -209,7 +212,7 @@ The Hermes board design may become the UI later. The proof of concept has no fro
   - New leads that miss the daily cap stay New and compete later.
   - A lead is never sent twice.
   - The first scan scores everything and sends the top 10 as usual.
-- **Freshness window:** 30 days (config). The freshness sub-score decays across it, and New leads past it are no longer sent.
+- **Freshness window:** 30 days (config), counted from when Job Scout first sees the lead; New leads first seen longer ago are no longer sent. The freshness sub-score decays by the posting's age (the earlier of published and first seen) over the same 30 days, so old postings rank lower but aren't excluded on day one (decided 2026-09-30).
 - **Closed:** when a posting disappears from its board, the lead is marked Closed quietly, with no message.
 - **Empty day:** a short "no new leads" message with counts: scanned, filtered, unscored.
 - **Crash:** an error workflow sends "Job Scout scan failed" with the node and the error to the same chat.

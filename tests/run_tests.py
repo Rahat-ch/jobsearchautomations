@@ -122,6 +122,19 @@ def rows_by_key():
     return {r["lead_key"]: r for r in lead_rows()}
 
 
+def set_first_seen(key, when):
+    """Backdate a test lead's first sighting, as if an earlier scan had found it."""
+    table = find_table(LEADS_TABLE)
+    assert table["name"].startswith(TEST_PREFIX)
+    body = {"filter": {"type": "and", "filters": [{"columnName": "lead_key", "condition": "eq", "value": key}]},
+            "data": {"first_seen_at": when.isoformat().replace("+00:00", "Z")}}
+    req = urllib.request.Request(f"{API}/data-tables/{table['id']}/rows/update", method="PATCH",
+                                 data=json.dumps(body).encode(), headers={
+                                     "X-N8N-API-KEY": ENV["N8N_API_KEY"], "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        resp.read()
+
+
 # ---------- fixtures: dates, keys and Jev answers ----------
 
 DAY = timedelta(days=1)
@@ -198,7 +211,7 @@ EXPECTED = {
     # scoring fixture
     "Developer Advocate, Platform": "passed",  # pay only in the description, below the floor
     "Senior Product Engineer, Growth": "passed",  # pay only in the description
-    "Senior Frontend Engineer, Dashboards": "passed",  # 41 days old: outside the freshness window
+    "Senior Frontend Engineer, Dashboards": "passed",  # posted 41 days ago: no freshness points
 }
 # location_basis that Apply hard filters gives each passing posting.
 BASIS = {"Solutions Engineer": "unclear", "Senior Product Engineer": "metro", "Frontend Engineer": "metro"}
@@ -227,6 +240,7 @@ JEV = {
     "Frontend Engineer": ("Product/Frontend Engineering", .97, 3.8, .95, "not_stated", 1.4),
     "Developer Advocate, Platform": ("DevRel/DevEx", .97, 2.0, .6, "not_stated", 2.6),
     "Senior Product Engineer, Growth": ("Product/Frontend Engineering", .97, 3.7, .95, "senior", 2.2),
+    "Senior Frontend Engineer, Dashboards": ("Product/Frontend Engineering", .96, 3.5, .9, "senior", 2.0),
 }
 # Jev's pick for the base salary question, for postings whose pay is only in the description.
 JEV_PAY = {"Developer Advocate, Platform": "$150,000 - $170,000 USD",
@@ -307,9 +321,10 @@ def expected_fit(key, **kw):
     return sum(expected_points(key, **kw).values())
 
 
-def fit_order(keys, **kw):
-    """Keys at or above the minimum, highest fit first; ties go to the newer posting."""
-    keep = [k for k in keys if expected_fit(k, **kw) >= 60 and AGE[k] <= 30]
+def fit_order(keys, min_fit=60, **kw):
+    """Keys in a role family and at or above the minimum, highest fit first; ties go to
+    the newer posting. Every key is assumed first seen within the freshness window."""
+    keep = [k for k in keys if JEV[ALL_KEYS[k]["title"]][0] != NONE and expected_fit(k, **kw) >= min_fit]
     return sorted(keep, key=lambda k: (-expected_fit(k, **kw), AGE[k], k))
 
 
@@ -582,27 +597,51 @@ def case_weight_change_reranks_without_jev(wf):
         assert rows[k]["fit_score"] == expected_fit(k, weights=new_weights), FKEY[k]["title"]
 
 
-def case_below_minimum_and_old_leads_never_sent(wf):
+def case_below_minimum_never_sent(wf):
     reset_test_tables()
-    low = [k for k in PASSED if expected_fit(k) < 60]
-    assert len(low) == 2, "fixture should have two leads below the minimum"
+    keep, low = fit_order(PASSED, min_fit=80), BY_TITLE["Forward Deployed Engineer - US East Coast"]
+    assert 60 <= expected_fit(low) < 80 <= expected_fit(keep[0]) and len(keep) == 1
     for judged in (PASSED, ()):
-        header, leads = sent(run_scan(wf, judged=judged))
-        assert not set(low) & {m["lead_key"] for m in leads}, "a lead below the minimum was sent"
+        header, leads = sent(run_scan(wf, judged=judged, minFitScore=80))
+        assert low not in {m["lead_key"] for m in leads}, "a lead below the minimum was sent"
     rows = rows_by_key()
-    for k in low:
-        assert rows[k]["fit_score"] < 60 and not rows[k]["sent_at"], KEY[k]["title"]
+    assert rows[keep[0]]["sent_at"] and not rows[low]["sent_at"]
+    assert rows[low]["selection_reason"] == "below_min_fit", rows[low]["selection_reason"]
 
-    # A posting 41 days old is outside the 30-day window: never judged, never sent.
+
+def case_no_role_family_never_sent(wf):
+    # With no role family points, the two "None of these" leads clear the minimum on
+    # their other sub-scores, but a lead outside the role families is never sent.
+    reset_test_tables()
+    weights = {**WEIGHTS, "roleFamily": 0}
+    none = [k for k in PASSED if JEV[KEY[k]["title"]][0] == NONE]
+    assert len(none) == 2 and all(expected_fit(k, weights=weights) >= 60 for k in none)
+    header, leads = sent(run_scan(wf, judged=PASSED, weights=weights))
+    check_sent_order(leads, fit_order(PASSED, weights=weights))
+    rows = rows_by_key()
+    for k in none:
+        r = rows[k]
+        assert r["fit_score"] >= 60 and not r["sent_at"], KEY[k]["title"]
+        assert r["role_family"] == NONE and r["selection_reason"] == "no_role_family", r["selection_reason"]
+
+
+def case_freshness_window_counts_from_first_seen(wf):
+    # A posting published 41 days ago is new to Job Scout today, so it is judged and
+    # sent, with no freshness points. A lead first seen 31 days ago is not judged or
+    # sent again, even though it would be the top lead.
     reset_test_tables()
     old = BY_TITLE["Senior Frontend Engineer, Dashboards"]
-    assert AGE[old] > 30
-    fresh = [k for k in SKEY if k != old]
-    for judged in (fresh, ()):
-        header, leads = sent(run_scan(wf, board=SCORING_BOARD, fixture=SCORING_FIXTURE, judged=judged))
-        assert old not in {m["lead_key"] for m in leads}, "a lead outside the window was sent"
-    row = rows_by_key()[old]
-    assert row["filter_result"] == "passed" and not row["scoring_state"] and not row["sent_at"], row
+    top = BY_TITLE["Senior Product Engineer, Growth"]
+    assert AGE[old] > 30 and expected_points(old)["freshness"] == 0
+    run_scan(wf, board=SCORING_BOARD, fixture=SCORING_FIXTURE, judged=list(SKEY), minFitScore=101)
+    rows = rows_by_key()
+    assert rows[old]["sub_freshness"] == 0 and rows[old]["selection_reason"] == "below_min_fit"
+    set_first_seen(top, datetime.now(timezone.utc) - 31 * DAY)
+    header, leads = sent(run_scan(wf, board=SCORING_BOARD, fixture=SCORING_FIXTURE, judged=()))
+    check_sent_order(leads, [old])
+    rows = rows_by_key()
+    assert rows[top]["selection_reason"] == "window_passed" and not rows[top]["sent_at"], rows[top]
+    assert rows[old]["fit_score"] == expected_fit(old) and rows[old]["sent_at"]
 
 
 def case_changed_profile_summary_rejudges_unsent_leads(wf):
@@ -683,19 +722,22 @@ def case_pay_found_in_description(wf):
     reset_test_tables()
     below = BY_TITLE["Developer Advocate, Platform"]  # $150,000 - $170,000
     above = BY_TITLE["Senior Product Engineer, Growth"]  # $190K–$230K
-    run_data = run_scan(wf, board=SCORING_BOARD, fixture=SCORING_FIXTURE, judged=[below, above])
+    run_data = run_scan(wf, board=SCORING_BOARD, fixture=SCORING_FIXTURE, judged=list(SKEY))
     requests = jev_requests(run_data)
     options = requests[below]["questions"]["base_salary"]["criteria"]
     assert list(options) == ["$20k-$100k", "$150,000 - $170,000 USD", "none"], list(options)
     assert len(requests[below]["state"]["posting"]["pay_mentions"]) == 2
     rows = rows_by_key()
     assert rows[below]["filter_result"] == "pay_floor", rows[below]["filter_result"]
+    assert rows[below]["selection_reason"] == "pay_floor" and not rows[below]["sent_at"]
     assert (rows[below]["pay_extracted_min"], rows[below]["pay_extracted_max"]) == (150000, 170000)
     assert (rows[above]["pay_extracted_min"], rows[above]["pay_extracted_max"]) == (190000, 230000)
     _, leads = sent(run_data)
-    check_sent_order(leads, [above])
-    assert "Pay: $190K–$230K (from the description)" in leads[0]["text"], leads[0]["text"]
-    assert [i["lead_key"] for i in items_reaching(run_data, FIT_NODE)] == [above]
+    order = fit_order([above, BY_TITLE["Senior Frontend Engineer, Dashboards"]])
+    check_sent_order(leads, order)
+    text = leads[order.index(above)]["text"]
+    assert "Pay: $190K–$230K (from the description)" in text, text
+    assert [i["lead_key"] for i in items_reaching(run_data, FIT_NODE)] == order
 
 
 # ---------- hard filters ----------
@@ -798,6 +840,8 @@ def case_config_defaults_match_spec(wf):
     assert [f["name"] for f in cfg["roleFamilies"]] == [
         "DevEx/Product PM", "FDE/Solutions", "Product/Frontend Engineering", "DevRel/DevEx"]
     assert all(f["titleKeywords"] and f["description"] for f in cfg["roleFamilies"])
+    fde = next(f["description"] for f in cfg["roleFamilies"] if f["name"] == "FDE/Solutions")
+    assert "technical or solutions consultants" in fde and "Not accounting" in fde, fde
     # Scoring (spec #1, issue #9).
     assert cfg["weights"] == WEIGHTS, cfg["weights"]
     assert cfg["minFitScore"] == 60 and cfg["freshnessWindowDays"] == 30 and cfg["dailyCap"] == 10
@@ -826,7 +870,9 @@ CASES = [
     case_rule_changes_apply_to_saved_leads,
     case_fit_score_from_sub_scores_and_weights,
     case_weight_change_reranks_without_jev,
-    case_below_minimum_and_old_leads_never_sent,
+    case_below_minimum_never_sent,
+    case_no_role_family_never_sent,
+    case_freshness_window_counts_from_first_seen,
     case_changed_profile_summary_rejudges_unsent_leads,
     case_jev_failure_leaves_lead_unscored,
     case_message_shows_fit_breakdown_and_fit_line,

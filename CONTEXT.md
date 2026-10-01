@@ -78,7 +78,7 @@ _Avoid_: Threshold
 A lead whose scoring failed during a scan. It is scored again on the next scan and is never sent until it has a fit score.
 
 **Freshness window**:
-How long after a lead is first seen or published it can still be sent. Default 30 days. The freshness sub-score decays across the window.
+How long after Job Scout first sees a lead it can still be sent. Default 30 days. Separately, the freshness sub-score decays as the posting ages (from the earlier of its publish date and first sighting) over the same number of days, so an old posting found today can still be sent but ranks lower.
 _Avoid_: Expiry, TTL
 
 **Config**:
